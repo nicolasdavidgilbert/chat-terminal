@@ -1,0 +1,152 @@
+"""Presentación ANSI incremental en la pantalla normal: conserva el scroll local."""
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+from wcwidth import iter_graphemes, wcswidth
+
+from .editor import Editor, safe_text
+
+ESC = "\x1b"
+RESET = f"{ESC}[0m"
+GREEN = f"{ESC}[01;32m"
+BLUE = f"{ESC}[01;34m"
+DIM = f"{ESC}[2m"
+MAGENTA = f"{ESC}[35m"
+START = f"\r{ESC}[?2004h{ESC}[?25h"
+RESTORE = f"{RESET}{ESC}[?2004l{ESC}[?25h"
+Span = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class Entry:
+    text: str
+    sender: str = ""
+    recipient: str = ""
+    kind: str = "system"
+
+
+def prompt(nick: str, hostname: str) -> list[Span]:
+    return [(GREEN, f"{nick}@{hostname}"), ("", ":"), (BLUE, "~"), ("", "$ ")]
+
+
+def layout(spans: Iterable[Span], width: int, cursor: int | None = None,
+           color: bool = True) -> tuple[list[str], tuple[int, int]]:
+    """Envuelve por celdas y grafemas, conservando espacios y colores."""
+    width = max(1, width)
+    rows = [""]
+    column = 0
+    offset = 0
+    position = (0, 0)
+    for style, text in spans:
+        for cluster in iter_graphemes(text):
+            length = len(cluster)
+            cells = max(0, wcswidth(cluster))
+            if cells > width:
+                cluster, cells = "?", 1
+            if column + cells > width or column == width:
+                rows.append("")
+                column = 0
+            if cursor is not None and offset == cursor:
+                position = (len(rows) - 1, column)
+            rows[-1] += (style + cluster + RESET) if color and style else cluster
+            column += cells
+            offset += length
+    if cursor is not None and offset == cursor:
+        if column == width:
+            rows.append("")
+            column = 0
+        position = (len(rows) - 1, column)
+    return rows, position
+
+
+class Terminal:
+    """Solo lo usa el hilo propietario del cliente; no guarda conversaciones."""
+
+    def __init__(self, send: Callable[[str], None], hostname: str, color: bool = True):
+        self.send = send
+        self.hostname = safe_text(hostname)[:32] or "chat"
+        self.color = color
+        self.width, self.height = 80, 24
+        self.nick = ""
+        self.cursor_row = 0
+        self.drawn = False
+
+    def prefix(self) -> list[Span]:
+        return prompt(self.nick, self.hostname) if self.nick else [("", "Apodo: ")]
+
+    def _erase(self) -> str:
+        if not self.drawn:
+            return ""
+        up = f"{ESC}[{self.cursor_row}A" if self.cursor_row else ""
+        self.drawn = False
+        self.cursor_row = 0
+        return up + "\r" + f"{ESC}[J"
+
+    def _input(self, editor: Editor) -> str:
+        prefix = self.prefix()
+        offset = sum(len(text) for _, text in prefix) + editor.cursor
+        rows, (row, column) = layout(prefix + [("", editor.line)], self.width,
+                                     offset, self.color)
+        # A very long input on a tiny terminal gets a viewport around the cursor.
+        available = max(1, self.height - 1)
+        start = max(0, min(row, len(rows) - available))
+        rows = rows[start:start + available]
+        row -= start
+        up = len(rows) - 1 - row
+        self.cursor_row = row
+        self.drawn = True
+        return ("\r\n".join(rows) + RESET
+                + (f"{ESC}[{up}A" if up else "")
+                + "\r" + (f"{ESC}[{column}C" if column else ""))
+
+    def redraw(self, editor: Editor):
+        self.send(f"{ESC}[?25l" + self._erase() + self._input(editor) + f"{ESC}[?25h")
+
+    def spans(self, entry: Entry) -> list[Span]:
+        if entry.kind == "message":
+            return prompt(entry.sender, self.hostname) + [("", entry.text)]
+        if entry.kind == "private":
+            return [(MAGENTA, "[privado] "), (GREEN, entry.sender),
+                    ("", " -> "), (GREEN, entry.recipient), ("", ": " + entry.text)]
+        return [(DIM if entry.kind == "notice" else "", entry.text)]
+
+    def output(self, entries: Iterable[Entry], editor: Editor):
+        buf = [f"{ESC}[?25l", self._erase()]
+        for entry in entries:
+            rows, _ = layout(self.spans(entry), self.width, color=self.color)
+            buf.append("\r\n".join(rows) + RESET + "\r\n")
+        buf.extend((self._input(editor), f"{ESC}[?25h"))
+        self.send("".join(buf))
+
+    def clear(self, editor: Editor):
+        self.drawn = False
+        self.cursor_row = 0
+        # Do not erase the terminal's scrollback with CSI 3 J.
+        self.send(f"{ESC}[2J{ESC}[H" + self._input(editor))
+
+    def resize(self, width: int, height: int, editor: Editor):
+        self.width = max(1, min(width, 1000))
+        self.height = max(2, min(height, 500))
+        # After a resize, the emulator may reflow rows differently. Re-anchor
+        # the prompt; clearing the visible page leaves local scrollback intact.
+        self.clear(editor)
+
+    def choices(self, choices: tuple[str, ...], editor: Editor):
+        cell_width = max(wcswidth(choice) for choice in choices) + 2
+        columns = max(1, self.width // cell_width)
+        count = (len(choices) + columns - 1) // columns
+        entries = []
+        for row in range(count):
+            cells = []
+            for column in range(columns):
+                index = column * count + row
+                if index < len(choices):
+                    value = choices[index]
+                    cells.append(value + " " * (cell_width - wcswidth(value)))
+            entries.append(Entry("".join(cells).rstrip()))
+        # Like Bash, list below the current input, then repeat the prompt.
+        self.output([Entry(editor.line, self.nick, kind="message"), *entries], editor)
+
+    def finish(self, editor: Editor, text: str = "logout"):
+        self.send(self._erase() + RESTORE + text + "\r\n")

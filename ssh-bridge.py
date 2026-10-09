@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Puente SSH -> chat. Se ejecuta en el SERVIDOR, como ForceCommand de sshd.
+"""Puente de terminal/SSH al chat. Uso: ssh-bridge.py [host] [puerto].
 
-sshd da a cada usuario un pseudo-terminal cifrado. Este script:
-  1. conecta con el servidor de chat (solo escucha en 127.0.0.1),
-  2. pone el terminal en modo raw (cada tecla se envía al instante),
-  3. avisa al chat del tamaño de la ventana y lo actualiza cada vez que
-     el usuario la redimensiona (SIGWINCH), para que el TUI sea responsive.
-
-Uso:  ssh_chat_bridge.py [host] [puerto]      (por defecto 127.0.0.1 2323)
+Para SSH, instalar como ForceCommand del servidor con un pseudo-terminal.
+Restaura el modo del terminal, cursor y pegado protegido incluso al salir.
 """
 
+import argparse
 import os
 import select
 import signal
@@ -19,46 +15,8 @@ import sys
 import termios
 import tty
 
-HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
-PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 2323
-
-IAC, SB, SE = 255, 250, 240
-OPT_NAWS = 31
-NEGOTIATION = (251, 252, 253, 254)       # WILL, WONT, DO, DONT
-
-
-class TelnetFilter:
-    """Quita la negociación telnet del flujo del servidor (válido entre lecturas partidas)."""
-
-    def __init__(self):
-        self.state = 0      # 0 datos, 1 tras IAC, 2 byte de opción, 3 subnegociación, 4 IAC dentro de SB
-
-    def feed(self, data: bytes) -> bytes:
-        out = bytearray()
-        for b in data:
-            if self.state == 0:
-                if b == IAC:
-                    self.state = 1
-                else:
-                    out.append(b)
-            elif self.state == 1:
-                if b == IAC:                 # IAC IAC = byte 255 literal
-                    out.append(IAC)
-                    self.state = 0
-                elif b in NEGOTIATION:
-                    self.state = 2
-                elif b == SB:
-                    self.state = 3
-                else:
-                    self.state = 0
-            elif self.state == 2:
-                self.state = 0
-            elif self.state == 3:
-                if b == IAC:
-                    self.state = 4
-            elif self.state == 4:
-                self.state = 0 if b == SE else 3
-        return bytes(out)
+from chat_terminal.protocol import IAC, NAWS, SB, SE, TelnetFilter
+from chat_terminal.terminal import RESTORE
 
 
 def window_size():
@@ -70,67 +28,84 @@ def window_size():
 
 
 def send_size(sock):
-    """Envía el tamaño actual (telnet NAWS: IAC SB 31 ancho alto IAC SE)."""
     cols, rows = window_size()
-    payload = struct.pack("!HH", cols, rows).replace(b"\xff", b"\xff\xff")
-    try:
-        sock.sendall(bytes([IAC, SB, OPT_NAWS]) + payload + bytes([IAC, SE]))
-    except OSError:
-        pass
+    payload = struct.pack("!HH", min(cols, 65535), min(rows, 65535))
+    payload = payload.replace(b"\xff", b"\xff\xff")
+    sock.sendall(bytes((IAC, SB, NAWS)) + payload + bytes((IAC, SE)))
 
 
 def write_all(fd, data: bytes):
     while data:
-        n = os.write(fd, data)
-        data = data[n:]
+        count = os.write(fd, data)
+        if not count:
+            raise OSError("No se pudo escribir en el terminal")
+        data = data[count:]
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Conecta el terminal al chat.")
+    parser.add_argument("host", nargs="?", default="127.0.0.1")
+    parser.add_argument("port", nargs="?", type=int, default=2323)
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("el puerto debe estar entre 1 y 65535")
     try:
-        sock = socket.create_connection((HOST, PORT), timeout=5)
-    except OSError as e:
-        sys.stdout.write(f"No se pudo conectar con el chat ({e}).\r\n")
-        return
-    sock.settimeout(None)
+        sock = socket.create_connection((args.host, args.port), timeout=5)
+    except OSError as error:
+        parser.exit(1, f"No se pudo conectar con el chat ({error}).\n")
+    sock.settimeout(1.0)
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
     stdin_fd, stdout_fd = sys.stdin.fileno(), sys.stdout.fileno()
-    resized = []
-    signal.signal(signal.SIGWINCH, lambda *_: resized.append(1))
-    filtro = TelnetFilter()
-    try:
-        old = termios.tcgetattr(stdin_fd)
-        tty.setraw(stdin_fd)
-    except termios.error:
-        old = None          # sin terminal (por ejemplo, ssh -T): se sigue sin modo raw
+    old = None
+    handlers = {}
+    flags = {"resized": False, "stop": False}
+
+    def resize(*_):
+        flags["resized"] = True
+
+    def stop(*_):
+        flags["stop"] = True
 
     try:
+        for sig, handler in ((signal.SIGWINCH, resize), (signal.SIGTERM, stop),
+                             (signal.SIGHUP, stop), (signal.SIGINT, stop)):
+            handlers[sig] = signal.signal(sig, handler)
+        try:
+            old = termios.tcgetattr(stdin_fd)
+            tty.setraw(stdin_fd)
+        except termios.error:
+            pass  # Also accepts redirected stdin; SSH should normally use -t.
+        filtro = TelnetFilter()
         send_size(sock)
-        while True:
-            ready, _, _ = select.select([sock, stdin_fd], [], [], 0.1)
-            if resized:                      # el usuario cambió el tamaño de su ventana
-                resized.clear()
+        while not flags["stop"]:
+            readable, _, _ = select.select([sock, stdin_fd], [], [], 0.1)
+            if flags["resized"]:
+                flags["resized"] = False
                 send_size(sock)
-            if sock in ready:
+            if sock in readable:
                 data = sock.recv(4096)
                 if not data:
                     break
                 write_all(stdout_fd, filtro.feed(data))
-            if stdin_fd in ready:
-                keys = os.read(stdin_fd, 1024)
+            if stdin_fd in readable:
+                keys = os.read(stdin_fd, 4096)
                 if not keys:
                     break
                 sock.sendall(keys.replace(b"\xff", b"\xff\xff"))
-    except OSError:
+    except (OSError, KeyboardInterrupt):
         pass
     finally:
-        if old is not None:
-            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old)
         try:
-            write_all(stdout_fd, b"\x1b[0m\x1b[?25h\r\n")
+            write_all(stdout_fd, (RESTORE + "\r\n").encode())
         except OSError:
             pass
-        sock.close()
+        try:
+            if old is not None:
+                termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old)
+        finally:
+            sock.close()
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)
 
 
 if __name__ == "__main__":

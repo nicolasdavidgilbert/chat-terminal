@@ -1,0 +1,55 @@
+import unittest
+
+from chat_terminal.protocol import Event, IAC, NAWS, Protocol, SB, SE, TelnetFilter
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_split_utf8_and_keys_preserve_order(self):
+        protocol = Protocol()
+        events = []
+        for byte in "á\x1b[D!\r\nsegunda\r".encode():
+            events.extend(protocol.feed(bytes((byte,))))
+        self.assertEqual(events[:4], [Event("text", "á"), Event("key", "left"),
+                                      Event("text", "!"), Event("key", "enter")])
+        self.assertEqual(sum(e == Event("key", "enter") for e in events), 2)
+
+    def test_naws_split_and_escaped_iac(self):
+        protocol = Protocol()
+        packet = bytes((IAC, SB, NAWS, 0, IAC, IAC, 0, 24, IAC, SE))
+        events = []
+        for byte in packet:
+            events.extend(protocol.feed(bytes((byte,))))
+        self.assertEqual(events, [Event("resize", (255, 24))])
+
+    def test_paste_never_submits_and_is_bounded(self):
+        protocol = Protocol()
+        payload = b"\x1b[200~/msg ana hola\r\nexit\tfin\x03\x1b[201~"
+        events = []
+        for byte in payload:
+            events.extend(protocol.feed(bytes((byte,))))
+        self.assertEqual(events, [Event("paste", "/msg ana hola  exit fin")])
+        events = protocol.feed(b"\x1b[200~" + b"x" * 10000 + b"\x1b[201~")
+        self.assertEqual(len(events[0].value), 400)
+        protocol.reset()
+        self.assertEqual(protocol.paste, bytearray())
+
+    def test_filter_preserves_data_with_split_negotiation(self):
+        parser = TelnetFilter()
+        packet = b"hola" + bytes((IAC, 251, 1)) + b" mundo" + bytes((IAC, IAC))
+        out = b"".join(parser.feed(bytes((byte,))) for byte in packet)
+        self.assertEqual(out, b"hola mundo\xff")
+
+    def test_cr_nul_lf_and_unsupported_options(self):
+        protocol = Protocol()
+        self.assertEqual(protocol.feed(b"\r\x00\n"), [Event("key", "enter")])
+        events = protocol.feed(bytes((IAC, 251, 99)))
+        self.assertEqual(events, [Event("reply", bytes((IAC, 254, 99)))])
+        protocol.feed(bytes((IAC, SB)) + b"x" * 10000)
+        self.assertLessEqual(len(protocol.sub), 64)
+
+    def test_osc_input_and_search_shortcut_are_ignored(self):
+        protocol = Protocol()
+        events = protocol.feed(b"\x1b]0;titulo\x07\x12hola")
+        self.assertEqual(events, [Event("text", ch) for ch in "hola"])
+        events = protocol.feed("\x1b[200~👨‍👩‍👧\x1b[201~".encode())
+        self.assertEqual(events, [Event("paste", "👨‍👩‍👧")])
