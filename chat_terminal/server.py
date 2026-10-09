@@ -23,8 +23,8 @@ WELCOME = (
 
 MAX_NICK = 12
 HELP = (
-    Entry(""),
     Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
+    Entry(""),
     Entry("NOMBRE", kind="heading"),
     Entry("  chat — conversación con edición de línea tipo Bash"),
     Entry(""),
@@ -45,7 +45,9 @@ HELP = (
     Entry("  Tab                   Completar comandos, /msg y @apodo", kind="manual"),
     Entry("  Ctrl+C / Ctrl+L       Cancelar la entrada / limpiar pantalla", kind="manual"),
     Entry("  Ctrl+D                Borrar; salir si la entrada está vacía", kind="manual"),
+    Entry(""),
     Entry("Tu historial se borra al salir. Las menciones no envían avisos."),
+    Entry(""),
     Entry("Máximo 5 mensajes seguidos; recuperas uno por segundo."),
 )
 
