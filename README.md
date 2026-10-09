@@ -49,7 +49,7 @@ SSH; su configuración se hace por separado. El chat no ejecuta órdenes del sis
 | --- | --- |
 | `/msg <apodo> <texto>` | Mensaje privado, visible solo para sus participantes |
 | `/lista`, `/who`, `ls`, `who` | Usuarios conectados |
-| `/ayuda`, `/help`, `help` | Ayuda |
+| `man chat`, `/ayuda`, `/help`, `help` | Manual del chat |
 | `/clear`, `clear` | Limpiar la pantalla |
 | `history` | Mostrar las entradas propias de esta sesión |
 | `/salir`, `/quit`, `/exit`, `exit`, `logout` | Salir |
@@ -59,7 +59,7 @@ SSH; su configuración se hace por separado. El chat no ejecuta órdenes del sis
 | Izquierda / derecha, Ctrl+B/F | Mover el cursor por caracteres completos |
 | Arriba / abajo, Ctrl+P/N | Recorrer el historial y recuperar el borrador |
 | Inicio / Fin, Ctrl+A/E | Ir al principio o final de la línea |
-| Alt+B/F, Ctrl+izquierda/derecha | Moverse por palabras |
+| Ctrl+izquierda/derecha | Moverse por palabras |
 | Retroceso / Suprimir | Borrar antes del cursor / en el cursor |
 | Ctrl+C | Cancelar la línea sin enviarla |
 | Ctrl+D | Borrar en el cursor; salir si la línea está vacía |
@@ -67,8 +67,12 @@ SSH; su configuración se hace por separado. El chat no ejecuta órdenes del sis
 | Tab | Completar comandos, destinatarios de `/msg` y menciones `@apodo` |
 
 En `ls`, `/lista` y `who`, los demás apodos aparecen en azul intenso y el tuyo
-en verde intenso, el mismo verde de tu prompt. `--no-color` también desactiva
-los colores de la lista y los títulos de ayuda.
+en cian intenso (`01;36`), distinguible del verde del prompt. `--no-color` también desactiva
+los colores de la lista y los del manual.
+
+`man chat` muestra la misma ayuda que `/help`, con secciones de manual,
+cabeceras en amarillo intenso, comandos en negrita y argumentos en cian
+subrayado. Tab también completa `man` y el nombre `chat`.
 
 Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.

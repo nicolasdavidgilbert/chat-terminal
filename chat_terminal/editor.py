@@ -11,7 +11,7 @@ from .protocol import MAX_INPUT
 HISTORY_SIZE = 300
 COMMANDS = ("/msg", "/lista", "/clear", "/ayuda", "/salir", "/help",
             "/who", "/quit", "/exit", "ls", "who", "clear", "help", "exit",
-            "logout", "history")
+            "logout", "history", "man")
 
 
 @dataclass(frozen=True)
@@ -150,6 +150,8 @@ class Editor:
             candidates = tuple("@" + n for n in nicknames)
         elif start == 0:
             candidates = COMMANDS
+        elif re.fullmatch(r"man\s+", prefix[:start], re.IGNORECASE):
+            candidates = ("chat",)
         elif re.fullmatch(r"/msg\s+", prefix[:start], re.IGNORECASE):
             candidates = tuple(n for n in nicknames)
         else:

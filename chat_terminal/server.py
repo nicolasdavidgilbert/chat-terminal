@@ -15,26 +15,26 @@ from .terminal import Entry, START, Terminal
 
 MAX_NICK = 12
 HELP = (
-    Entry("Comandos", kind="heading"),
-    Entry("  /msg <apodo> <texto>   Enviar un mensaje privado"),
-    Entry("  ls, /lista            Ver quién está conectado (tú en verde)"),
-    Entry("  clear, /clear         Limpiar la pantalla"),
-    Entry("  history               Ver tu historial de esta sesión"),
-    Entry("  /help, /ayuda          Mostrar esta ayuda"),
-    Entry("  exit, /salir          Salir del chat"),
+    Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
+    Entry("NOMBRE", kind="heading"),
+    Entry("  chat — conversación con edición de línea tipo Bash"),
+    Entry("USO", kind="heading"),
+    Entry("  man chat, /help       Mostrar este manual", kind="manual"),
     Entry(""),
-    Entry("Edición", kind="heading"),
-    Entry("  ← / →                 Mover el cursor"),
-    Entry("  ↑ / ↓                 Recorrer el historial y recuperar el borrador"),
-    Entry("  Inicio / Fin          Ir al principio o al final (Ctrl+A / Ctrl+E)"),
-    Entry("  Alt+B / Alt+F         Moverse por palabras"),
-    Entry("  Tab                   Completar comandos, /msg y menciones @apodo"),
+    Entry("COMANDOS", kind="heading"),
+    Entry("  /msg <apodo> <texto>   Enviar un mensaje privado", kind="manual"),
+    Entry("  ls, /lista            Ver usuarios: tú en cian, los demás en azul", kind="manual"),
+    Entry("  clear, /clear         Limpiar la pantalla", kind="manual"),
+    Entry("  history               Ver tu historial de esta sesión", kind="manual"),
+    Entry("  /ayuda, help          Mostrar este manual", kind="manual"),
+    Entry("  exit, /salir          Salir del chat", kind="manual"),
     Entry(""),
-    Entry("Control", kind="heading"),
-    Entry("  Ctrl+C                Cancelar la entrada"),
-    Entry("  Ctrl+L                Limpiar sin borrar el historial"),
-    Entry("  Ctrl+D                Borrar en el cursor; salir si la línea está vacía"),
-    Entry(""),
+    Entry("TECLAS", kind="heading"),
+    Entry("  ←/→, Inicio/Fin       Editar la línea", kind="manual"),
+    Entry("  ↑/↓                   Historial y recuperación del borrador", kind="manual"),
+    Entry("  Tab                   Completar comandos, /msg y @apodo", kind="manual"),
+    Entry("  Ctrl+C / Ctrl+L       Cancelar la entrada / limpiar pantalla", kind="manual"),
+    Entry("  Ctrl+D                Borrar; salir si la entrada está vacía", kind="manual"),
     Entry("Tu historial se borra al salir. Las menciones no envían avisos."),
 )
 
@@ -157,7 +157,9 @@ class Session:
             return False
         if command in ("/clear", "clear") and len(parts) == 1:
             self.terminal.clear(self.editor)
-        elif command in ("/ayuda", "/help", "help") and len(parts) == 1:
+        elif ((command in ("/ayuda", "/help", "help") and len(parts) == 1)
+              or (command == "man" and len(parts) == 2
+                  and parts[1].casefold() == "chat")):
             self.enqueue(Entry(text, self.nick, kind="message"))
             for entry in HELP:
                 self.enqueue(entry)

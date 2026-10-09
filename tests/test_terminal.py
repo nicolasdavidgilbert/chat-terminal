@@ -73,13 +73,13 @@ class TerminalTests(unittest.TestCase):
         entry = Entry("", kind="users", names=("ana", "bea"))
         self.terminal.output([entry], self.editor)
         self.assertEqual(self.screen.display[0].strip(), "ana  bea")
-        self.assertEqual(self.screen.buffer[0][0].fg, "green")
+        self.assertEqual(self.screen.buffer[0][0].fg, "cyan")
         self.assertEqual(self.screen.buffer[0][5].fg, "blue")
         self.assertTrue(self.screen.buffer[0][0].bold)
         self.terminal.nick = "bea"
         self.terminal.output([entry], self.editor)
         self.assertEqual(self.screen.buffer[1][0].fg, "blue")
-        self.assertEqual(self.screen.buffer[1][5].fg, "green")
+        self.assertEqual(self.screen.buffer[1][5].fg, "cyan")
 
     def test_user_listing_without_color(self):
         self.terminal.color = False
@@ -87,3 +87,20 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(self.screen.display[0].strip(), "ana  bea")
         self.assertEqual(self.screen.buffer[0][0].fg, "default")
         self.assertEqual(self.screen.buffer[0][5].fg, "default")
+
+    def test_manual_styles_and_plain_text_mode(self):
+        self.terminal.output([
+            Entry("COMANDOS", kind="heading"),
+            Entry("  /msg <apodo> <texto>   Enviar un privado", kind="manual"),
+        ], self.editor)
+        # pyte calls ANSI 33 "brown"; bold produces intense yellow.
+        self.assertEqual(self.screen.buffer[0][0].fg, "brown")
+        self.assertTrue(self.screen.buffer[0][0].bold)
+        self.assertTrue(self.screen.buffer[1][2].bold)
+        self.assertEqual(self.screen.buffer[1][7].fg, "cyan")
+        self.assertTrue(self.screen.buffer[1][7].underscore)
+        self.terminal.color = False
+        rows, _ = layout(self.terminal.spans(
+            Entry("  /msg <apodo> <texto>   Enviar un privado", kind="manual")
+        ), 80, color=False)
+        self.assertEqual(rows, ["  /msg <apodo> <texto>   Enviar un privado"])

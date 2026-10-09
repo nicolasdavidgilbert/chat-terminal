@@ -102,3 +102,12 @@ class EditorTests(unittest.TestCase):
         editor.complete(["ana"])
         self.assertEqual(editor.line, "/msg ana hola")
         self.assertEqual(editor.cursor, 8)
+
+    def test_man_chat_completion(self):
+        editor = Editor()
+        editor.insert("ma")
+        editor.complete([])
+        self.assertEqual(editor.line, "man ")
+        editor.insert("ch")
+        editor.complete([])
+        self.assertEqual(editor.line, "man chat ")

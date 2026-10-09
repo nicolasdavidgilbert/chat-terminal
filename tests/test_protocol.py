@@ -56,3 +56,8 @@ class ProtocolTests(unittest.TestCase):
 
     def test_removed_cut_and_yank_shortcuts_are_ignored(self):
         self.assertEqual(Protocol().feed(b"\x15\x0b\x17\x19\x1b\x7f"), [])
+
+    def test_alt_word_movement_is_removed(self):
+        protocol = Protocol()
+        self.assertEqual(protocol.feed(b"\x1bb\x1bf\x1b[1;3C\x1b[1;3D"), [])
+        self.assertEqual(protocol.feed(b"\x1b[1;5C"), [Event("key", "word_right")])

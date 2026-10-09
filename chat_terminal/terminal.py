@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+import re
 
 from wcwidth import iter_graphemes, wcswidth
 
@@ -12,6 +13,9 @@ RESET = f"{ESC}[0m"
 BOLD = f"{ESC}[1m"
 GREEN = f"{ESC}[01;32m"
 BLUE = f"{ESC}[01;34m"
+CYAN = f"{ESC}[01;36m"
+YELLOW = f"{ESC}[01;33m"
+UNDERLINE = f"{ESC}[4m"
 DIM = f"{ESC}[2m"
 MAGENTA = f"{ESC}[35m"
 START = f"\r{ESC}[?2004h{ESC}[?25h"
@@ -111,11 +115,22 @@ class Terminal:
             for index, nick in enumerate(entry.names):
                 if index:
                     spans.append(("", "  "))
-                style = GREEN if nick.casefold() == self.nick.casefold() else BLUE
+                style = CYAN if nick.casefold() == self.nick.casefold() else BLUE
                 spans.append((style, nick))
             return spans
         if entry.kind == "heading":
-            return [(BOLD, entry.text)]
+            return [(YELLOW, entry.text)]
+        if entry.kind == "manual":
+            match = re.fullmatch(r"(\s+)(.*?)(\s{2,})(.*)", entry.text)
+            if not match:
+                return [(BOLD, entry.text)]
+            indent, command, gap, description = match.groups()
+            spans = [("", indent)]
+            for part in re.split(r"(<[^>]+>)", command):
+                style = CYAN + UNDERLINE if part.startswith("<") else BOLD
+                spans.append((style, part))
+            spans.extend((("", gap), ("", description)))
+            return spans
         if entry.kind == "message":
             return prompt(entry.sender, self.hostname) + [("", entry.text)]
         if entry.kind == "private":

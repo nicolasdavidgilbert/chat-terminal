@@ -170,8 +170,14 @@ class ServerTests(unittest.TestCase):
         ana.send("/help\r")
         ana.until("Tu historial se borra al salir.")
         visible = "\n".join(ana.screen.display)
-        for heading in ("Comandos", "Edición", "Control"):
+        for heading in ("CHAT(1)", "NOMBRE", "USO", "COMANDOS", "TECLAS"):
             self.assertIn(heading, visible)
-        self.assertIn("menciones @apodo", visible)
-        for shortcut in ("Ctrl+U", "Ctrl+K", "Ctrl+W", "Ctrl+Y"):
+        self.assertIn("/msg y @apodo", visible)
+        for shortcut in ("Ctrl+U", "Ctrl+K", "Ctrl+W", "Ctrl+Y", "Alt+B", "Alt+F"):
             self.assertNotIn(shortcut, visible)
+
+    def test_man_chat_alias(self):
+        ana = self.client("ana")
+        ana.send("man chat\r")
+        ana.until("Tu historial se borra al salir.")
+        self.assertIn("CHAT(1)", "\n".join(ana.screen.display))

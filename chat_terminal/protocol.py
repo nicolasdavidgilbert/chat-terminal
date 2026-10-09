@@ -27,8 +27,6 @@ SEQUENCES = {
     "OA": "up", "OB": "down", "OC": "right", "OD": "left",
     "[1~": "home", "[7~": "home", "[4~": "end", "[8~": "end",
     "[3~": "delete", "[1;5C": "word_right", "[1;5D": "word_left",
-    "[1;3C": "word_right", "[1;3D": "word_left",
-    "b": "word_left", "f": "word_right",
 }
 
 
