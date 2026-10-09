@@ -33,7 +33,6 @@ class Editor:
         self.history: list[str] = []
         self.history_index = 0
         self.draft = ("", 0)
-        self.kill_buffer = ""
         self.last_completion = None
 
     def dispose(self):
@@ -42,7 +41,6 @@ class Editor:
         self.history.clear()
         self.history_index = 0
         self.draft = ("", 0)
-        self.kill_buffer = ""
         self.last_completion = None
 
     def boundaries(self) -> list[int]:
@@ -139,24 +137,6 @@ class Editor:
             self.cursor = before
         elif key in ("delete", "eof"):
             self.line = self.line[:self.cursor] + self.line[after:]
-        elif key == "kill_start":
-            self.kill_buffer = self.line[:self.cursor]
-            self.line = self.line[self.cursor:]
-            self.cursor = 0
-        elif key == "kill_end":
-            self.kill_buffer = self.line[self.cursor:]
-            self.line = self.line[:self.cursor]
-        elif key == "kill_word":
-            position = self.cursor
-            while position and self.line[position - 1].isspace():
-                position -= 1
-            while position and not self.line[position - 1].isspace():
-                position -= 1
-            self.kill_buffer = self.line[position:self.cursor]
-            self.line = self.line[:position] + self.line[self.cursor:]
-            self.cursor = position
-        elif key == "yank":
-            self.insert(self.kill_buffer)
         self.cursor = next(p for p in self.boundaries() if p >= self.cursor)
         return EditResult()
 

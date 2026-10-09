@@ -19,8 +19,7 @@ class Event:
 KEYS = {
     1: "home", 2: "left", 3: "cancel", 4: "eof", 5: "end",
     6: "right", 8: "backspace", 9: "tab", 12: "clear",
-    14: "down", 16: "up", 11: "kill_end", 21: "kill_start",
-    23: "kill_word", 25: "yank", 127: "backspace",
+    14: "down", 16: "up", 127: "backspace",
 }
 SEQUENCES = {
     "[A": "up", "[B": "down", "[C": "right", "[D": "left",
@@ -29,7 +28,7 @@ SEQUENCES = {
     "[1~": "home", "[7~": "home", "[4~": "end", "[8~": "end",
     "[3~": "delete", "[1;5C": "word_right", "[1;5D": "word_left",
     "[1;3C": "word_right", "[1;3D": "word_left",
-    "b": "word_left", "f": "word_right", "\x7f": "kill_word",
+    "b": "word_left", "f": "word_right",
 }
 
 

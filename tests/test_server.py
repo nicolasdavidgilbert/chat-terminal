@@ -107,7 +107,7 @@ class ServerTests(unittest.TestCase):
         while old.editor.history:
             self.assertLess(time.monotonic(), deadline)
             threading.Event().wait(0.01)
-        self.assertEqual((old.editor.line, old.editor.kill_buffer), ("", ""))
+        self.assertEqual(old.editor.line, "")
         self.assertTrue(old.pending.empty())
         fresh = self.client("ana")
         fresh.send("\x1b[A")
@@ -164,3 +164,14 @@ class ServerTests(unittest.TestCase):
         other.send("jose\u0301\r")
         other.until("Conectado como josé")
         ana.until("josé se ha unido.")
+
+    def test_help_is_grouped_and_has_no_removed_shortcuts(self):
+        ana = self.client("ana")
+        ana.send("/help\r")
+        ana.until("Tu historial se borra al salir.")
+        visible = "\n".join(ana.screen.display)
+        for heading in ("Comandos", "Edición", "Control"):
+            self.assertIn(heading, visible)
+        self.assertIn("menciones @apodo", visible)
+        for shortcut in ("Ctrl+U", "Ctrl+K", "Ctrl+W", "Ctrl+Y"):
+            self.assertNotIn(shortcut, visible)

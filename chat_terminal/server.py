@@ -15,17 +15,27 @@ from .terminal import Entry, START, Terminal
 
 MAX_NICK = 12
 HELP = (
-    "Comandos del chat (no ejecutan órdenes del sistema):",
-    "  /msg <apodo> <texto>   mensaje privado",
-    "  /lista, ls, who       usuarios conectados",
-    "  /clear, clear        limpiar pantalla",
-    "  /ayuda, help         mostrar ayuda",
-    "  history              entradas propias de esta sesión",
-    "  /salir, exit         salir",
-    "Flechas: editar / historial. Inicio/Fin o Ctrl+A/E: extremos.",
-    "Alt+B/F: palabras. Ctrl+U/K/W: cortar. Ctrl+Y: recuperar.",
-    "Tab: comandos, destinatarios de /msg y menciones @apodo.",
-    "Ctrl+C: cancelar. Ctrl+L: limpiar. Ctrl+D: borrar o salir en vacío.",
+    Entry("Comandos", kind="heading"),
+    Entry("  /msg <apodo> <texto>   Enviar un mensaje privado"),
+    Entry("  ls, /lista            Ver quién está conectado (tú en verde)"),
+    Entry("  clear, /clear         Limpiar la pantalla"),
+    Entry("  history               Ver tu historial de esta sesión"),
+    Entry("  /help, /ayuda          Mostrar esta ayuda"),
+    Entry("  exit, /salir          Salir del chat"),
+    Entry(""),
+    Entry("Edición", kind="heading"),
+    Entry("  ← / →                 Mover el cursor"),
+    Entry("  ↑ / ↓                 Recorrer el historial y recuperar el borrador"),
+    Entry("  Inicio / Fin          Ir al principio o al final (Ctrl+A / Ctrl+E)"),
+    Entry("  Alt+B / Alt+F         Moverse por palabras"),
+    Entry("  Tab                   Completar comandos, /msg y menciones @apodo"),
+    Entry(""),
+    Entry("Control", kind="heading"),
+    Entry("  Ctrl+C                Cancelar la entrada"),
+    Entry("  Ctrl+L                Limpiar sin borrar el historial"),
+    Entry("  Ctrl+D                Borrar en el cursor; salir si la línea está vacía"),
+    Entry(""),
+    Entry("Tu historial se borra al salir. Las menciones no envían avisos."),
 )
 
 
@@ -149,11 +159,11 @@ class Session:
             self.terminal.clear(self.editor)
         elif command in ("/ayuda", "/help", "help") and len(parts) == 1:
             self.enqueue(Entry(text, self.nick, kind="message"))
-            for line in HELP:
-                self.enqueue(Entry(line))
+            for entry in HELP:
+                self.enqueue(entry)
         elif command in ("/lista", "/who", "ls", "who") and len(parts) == 1:
             self.enqueue(Entry(text, self.nick, kind="message"))
-            self.enqueue(Entry("  ".join(self.room.names())))
+            self.enqueue(Entry("", kind="users", names=tuple(self.room.names())))
         elif command == "history" and len(parts) == 1:
             self.flush()
             entries = [Entry(text, self.nick, kind="message")]

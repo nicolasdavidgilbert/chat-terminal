@@ -61,12 +61,14 @@ SSH; su configuración se hace por separado. El chat no ejecuta órdenes del sis
 | Inicio / Fin, Ctrl+A/E | Ir al principio o final de la línea |
 | Alt+B/F, Ctrl+izquierda/derecha | Moverse por palabras |
 | Retroceso / Suprimir | Borrar antes del cursor / en el cursor |
-| Ctrl+U/K/W | Cortar hasta el principio / final / palabra anterior |
-| Ctrl+Y | Recuperar el último texto cortado |
 | Ctrl+C | Cancelar la línea sin enviarla |
 | Ctrl+D | Borrar en el cursor; salir si la línea está vacía |
 | Ctrl+L | Limpiar la pantalla conservando entrada e historial |
 | Tab | Completar comandos, destinatarios de `/msg` y menciones `@apodo` |
+
+En `ls`, `/lista` y `who`, los demás apodos aparecen en azul intenso y el tuyo
+en verde intenso, el mismo verde de tu prompt. `--no-color` también desactiva
+los colores de la lista y los títulos de ayuda.
 
 Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.
@@ -84,8 +86,7 @@ fechas ni horas. No se imprimen los eventos de usuarios en la consola del servid
 No se guardan mensajes, apodos, historial ni eventos en archivos o bases de datos.
 Cada conexión mantiene únicamente estado temporal: hasta 300 entradas propias,
 una línea de hasta 400 bytes UTF-8 y una cola limitada de mensajes por entregar.
-Al terminar su hilo se vacían el historial, borrador, texto cortado, datos de
-protocolo y cola, y se retira el usuario del registro. Una reconexión empieza vacía.
+Al terminar su hilo se vacían el historial, borrador, datos de protocolo y cola, y se retira el usuario del registro. Una reconexión empieza vacía.
 No hay búsqueda de texto ni historial compartido entre sesiones.
 
 El terminal de cada participante puede conservar su propio scroll local. `clear`

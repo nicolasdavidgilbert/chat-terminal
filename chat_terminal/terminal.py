@@ -9,6 +9,7 @@ from .editor import Editor, safe_text
 
 ESC = "\x1b"
 RESET = f"{ESC}[0m"
+BOLD = f"{ESC}[1m"
 GREEN = f"{ESC}[01;32m"
 BLUE = f"{ESC}[01;34m"
 DIM = f"{ESC}[2m"
@@ -24,6 +25,7 @@ class Entry:
     sender: str = ""
     recipient: str = ""
     kind: str = "system"
+    names: tuple[str, ...] = ()
 
 
 def prompt(nick: str, hostname: str) -> list[Span]:
@@ -104,6 +106,16 @@ class Terminal:
         self.send(f"{ESC}[?25l" + self._erase() + self._input(editor) + f"{ESC}[?25h")
 
     def spans(self, entry: Entry) -> list[Span]:
+        if entry.kind == "users":
+            spans = []
+            for index, nick in enumerate(entry.names):
+                if index:
+                    spans.append(("", "  "))
+                style = GREEN if nick.casefold() == self.nick.casefold() else BLUE
+                spans.append((style, nick))
+            return spans
+        if entry.kind == "heading":
+            return [(BOLD, entry.text)]
         if entry.kind == "message":
             return prompt(entry.sender, self.hostname) + [("", entry.text)]
         if entry.kind == "private":

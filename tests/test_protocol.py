@@ -53,3 +53,6 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(events, [Event("text", ch) for ch in "hola"])
         events = protocol.feed("\x1b[200~👨‍👩‍👧\x1b[201~".encode())
         self.assertEqual(events, [Event("paste", "👨‍👩‍👧")])
+
+    def test_removed_cut_and_yank_shortcuts_are_ignored(self):
+        self.assertEqual(Protocol().feed(b"\x15\x0b\x17\x19\x1b\x7f"), [])

@@ -34,21 +34,12 @@ class EditorTests(unittest.TestCase):
         editor.key("down")
         self.assertEqual((editor.line, editor.cursor), ("borrador", 7))
 
-    def test_cut_yank_and_cancel(self):
+    def test_cancel_does_not_save_input(self):
         editor = Editor()
         editor.insert("hola mundo")
-        editor.key("kill_word")
-        self.assertEqual(editor.line, "hola ")
-        editor.key("yank")
-        editor.key("home")
-        editor.key("word_right")
-        editor.key("kill_start")
-        self.assertEqual(editor.line, " mundo")
-        editor.key("end")
-        editor.key("yank")
-        self.assertEqual(editor.line, " mundohola")
-        self.assertEqual(editor.key("cancel").text, " mundohola")
+        self.assertEqual(editor.key("cancel").text, "hola mundo")
         self.assertEqual(editor.history, [])
+        self.assertEqual(editor.line, "")
         self.assertEqual(editor.key("eof").action, "exit")
 
     def test_unicode_clusters_and_byte_limit(self):
@@ -93,12 +84,11 @@ class EditorTests(unittest.TestCase):
         for index in range(HISTORY_SIZE + 10):
             editor.remember(str(index))
         self.assertEqual(len(editor.history), HISTORY_SIZE)
-        editor.kill_buffer = "privado"
         editor.insert("borrador")
         editor.complete([])
         editor.dispose()
         self.assertEqual(editor.history, [])
-        self.assertEqual((editor.line, editor.kill_buffer, editor.draft), ("", "", ("", 0)))
+        self.assertEqual((editor.line, editor.draft), ("", ("", 0)))
 
     def test_control_characters_are_filtered(self):
         editor = Editor()

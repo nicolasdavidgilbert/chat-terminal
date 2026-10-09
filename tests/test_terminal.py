@@ -36,7 +36,7 @@ class TerminalTests(unittest.TestCase):
         self.editor.key("home")
         self.terminal.redraw(self.editor)
         self.assertEqual((self.screen.cursor.x, self.screen.cursor.y), (14, 0))
-        self.editor.key("kill_end")
+        self.editor.key("cancel")
         self.terminal.redraw(self.editor)
         self.assertTrue(all(not row.strip() for row in self.screen.display[1:]))
 
@@ -68,3 +68,22 @@ class TerminalTests(unittest.TestCase):
         self.editor.key("end")
         self.terminal.redraw(self.editor)
         self.assertLess(self.screen.cursor.y, 3)
+
+    def test_user_listing_colors_are_relative_to_viewer(self):
+        entry = Entry("", kind="users", names=("ana", "bea"))
+        self.terminal.output([entry], self.editor)
+        self.assertEqual(self.screen.display[0].strip(), "ana  bea")
+        self.assertEqual(self.screen.buffer[0][0].fg, "green")
+        self.assertEqual(self.screen.buffer[0][5].fg, "blue")
+        self.assertTrue(self.screen.buffer[0][0].bold)
+        self.terminal.nick = "bea"
+        self.terminal.output([entry], self.editor)
+        self.assertEqual(self.screen.buffer[1][0].fg, "blue")
+        self.assertEqual(self.screen.buffer[1][5].fg, "green")
+
+    def test_user_listing_without_color(self):
+        self.terminal.color = False
+        self.terminal.output([Entry("", kind="users", names=("ana", "bea"))], self.editor)
+        self.assertEqual(self.screen.display[0].strip(), "ana  bea")
+        self.assertEqual(self.screen.buffer[0][0].fg, "default")
+        self.assertEqual(self.screen.buffer[0][5].fg, "default")
