@@ -1,6 +1,7 @@
 """Servidor de chat efímero. Cada cliente posee su editor y su salida."""
 
 import argparse
+import platform
 from queue import Empty, Full, Queue
 import re
 import select
@@ -14,10 +15,24 @@ from .editor import Editor, safe_text
 from .protocol import Event, NEGOTIATION, Protocol
 from .terminal import Entry, START, Terminal
 
+def system_welcome() -> str:
+    try:
+        release = platform.freedesktop_os_release()
+    except OSError:
+        name = platform.system()
+    else:
+        name = release.get("PRETTY_NAME", platform.system())
+    return safe_text(f"Welcome to {name} ({platform.system()} {platform.release()} {platform.machine()})")
+
+
 WELCOME = (
-    Entry("CHAT PRIVADO DE CLASE", kind="heading"),
-    Entry("Si te pilla el profe, es tu culpa."),
-    Entry("El host no da la cara. Aquí nadie suelta nombres.", kind="notice"),
+    Entry(system_welcome()),
+    Entry(""),
+    Entry(" * Documentation:  https://help.ubuntu.com"),
+    Entry(" * Management:     https://landscape.canonical.com"),
+    Entry(" * Support:        https://ubuntu.com/pro"),
+    Entry(""),
+    Entry("Esta sesión es privada. El historial se borra al salir."),
     Entry(""),
 )
 
@@ -162,6 +177,10 @@ class Session:
 
     def line(self, text: str) -> bool:
         if not self.nick:
+            # Leave each submitted attempt above the next prompt, like SSH.
+            self.terminal.output([
+                Entry(f"chat@{self.terminal.login_host} apodo: {safe_text(text)}")
+            ], self.editor)
             nick = unicodedata.normalize("NFC", text.strip())
             if not re.fullmatch(rf"[\w.-]{{1,{MAX_NICK}}}", nick, re.UNICODE):
                 self.enqueue(Entry(
@@ -173,6 +192,8 @@ class Session:
                 # Nick input must not become part of the chat's editing history.
                 self.editor.dispose()
                 self.terminal.nick = nick
+                for entry in WELCOME:
+                    self.enqueue(entry)
                 self.enqueue(Entry(
                     f"Conectado como {nick}. Escribe /ayuda para ver los comandos."
                 ))
@@ -230,7 +251,12 @@ class Session:
         return True
 
     def event(self, event: Event) -> bool:
-        if event.kind in ("text", "paste"):
+        if event.kind == "ssh_address":
+            if not self.nick:
+                self.terminal.login_host = event.value
+                if self.terminal.drawn:
+                    self.terminal.redraw(self.editor)
+        elif event.kind in ("text", "paste"):
             if not self.editor.insert(event.value):
                 self.send("\a")
         elif event.kind == "reply":
@@ -268,7 +294,20 @@ class Session:
             self.conn.settimeout(1.0)
             self.conn.sendall(NEGOTIATION)
             self.send(START)
-            self.terminal.output(WELCOME, self.editor)
+            # Read the bridge's initial address/size before printing a prompt.
+            # Direct Telnet clients receive the normal hostname after 100 ms.
+            readable, _, _ = select.select([self.conn], [], [], 0.1)
+            if readable:
+                data = self.conn.recv(4096)
+                if not data:
+                    return
+                for event in self.protocol.feed(data):
+                    if not self.event(event):
+                        return
+                    if event.kind == "key" and event.value in ("enter", "cancel"):
+                        self.flush()
+                self.flush()
+            self.terminal.redraw(self.editor)
             while not self.stopping.is_set():
                 self.flush()
                 readable, _, _ = select.select([self.conn], [], [], 0.05)

@@ -8,7 +8,7 @@ import pyte
 
 from chat_terminal.protocol import TelnetFilter
 from chat_terminal.protocol import Event
-from chat_terminal.server import ChatServer, Room, Session, WELCOME
+from chat_terminal.server import ChatServer, Room, Session
 
 
 class Client:
@@ -18,7 +18,13 @@ class Client:
         self.stream = pyte.ByteStream(self.screen)
         self.filter = TelnetFilter()
         self.data = bytearray()
-        self.until("Apodo:")
+        self.until(" apodo:")
+
+    def display_text(self):
+        history = ["".join(row[index].data if index in row else " "
+                           for index in range(self.screen.columns))
+                   for row in self.screen.history.top]
+        return "\n".join(history + self.screen.display)
 
     def send(self, text):
         self.socket.sendall(text.encode())
@@ -157,17 +163,40 @@ class ServerTests(unittest.TestCase):
             local.close()
             remote.close()
 
-    def test_resize_before_nick_does_not_repeat_welcome(self):
+    def test_resize_before_nick_does_not_clear_screen(self):
         local, remote = socket.socketpair()
         session = Session(local, Room(), "ubuntu")
         try:
-            session.terminal.output(WELCOME, session.editor)
+            sent = []
+            session.terminal.send = sent.append
+            session.terminal.redraw(session.editor)
             session.event(Event("resize", (40, 12)))
             session.event(Event("resize", (60, 16)))
-            self.assertEqual(list(session.terminal.entries), list(WELCOME))
+            self.assertFalse(session.terminal.entries)
+            self.assertNotIn("\x1b[2J", "".join(sent))
+            self.assertNotIn("\x1b[H", "".join(sent))
         finally:
             local.close()
             remote.close()
+
+    def test_nick_attempts_remain_visible_and_welcome_follows_acceptance(self):
+        client = Client(self.server.port)
+        self.clients.append(client)
+        self.assertNotIn(b"Welcome to ", client.data)
+        client.send("mal apodo\r")
+        client.until("Apodo inválido")
+        visible = "\n".join(client.screen.display)
+        self.assertIn("chat@ubuntu apodo: mal apodo", visible)
+        self.assertIn("chat@ubuntu apodo:", client.screen.display[client.screen.cursor.y])
+        self.assertNotIn(b"Welcome to ", client.data)
+        client.send("ana\r")
+        client.until("Conectado como ana")
+        self.assertIn("chat@ubuntu apodo: ana", "\n".join(client.screen.display))
+        self.assertEqual(client.data.count(b"Welcome to "), 1)
+        client.send("history\r")
+        client.until("1  history")
+        with self.server.room.lock:
+            self.assertEqual(self.server.room.users["ana"].editor.history, ["history"])
 
     def test_duplicate_names_and_unicode_normalization(self):
         ana = self.client("ana")
@@ -183,7 +212,7 @@ class ServerTests(unittest.TestCase):
         ana = self.client("ana")
         ana.send("/help\r")
         ana.until("Tu historial se borra al salir.")
-        visible = "\n".join(ana.screen.display)
+        visible = ana.display_text()
         for heading in ("CHAT(1)", "NOMBRE", "USO", "COMANDOS", "TECLAS"):
             self.assertIn(heading, visible)
         self.assertIn("/msg y @apodo", visible)
@@ -194,7 +223,7 @@ class ServerTests(unittest.TestCase):
         ana = self.client("ana")
         ana.send("man chat\r")
         ana.until("Tu historial se borra al salir.")
-        self.assertIn("CHAT(1)", "\n".join(ana.screen.display))
+        self.assertIn("CHAT(1)", ana.display_text())
 
     def test_burst_is_limited_and_warning_is_private(self):
         ana = self.client("ana")

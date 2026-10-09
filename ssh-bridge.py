@@ -6,6 +6,7 @@ Restaura el modo del terminal, cursor y pegado protegido incluso al salir.
 """
 
 import argparse
+import ipaddress
 import os
 import select
 import signal
@@ -15,7 +16,7 @@ import sys
 import termios
 import tty
 
-from chat_terminal.protocol import IAC, NAWS, SB, SE, TelnetFilter
+from chat_terminal.protocol import IAC, NAWS, SB, SE, SSH_ADDRESS, TelnetFilter
 from chat_terminal.terminal import RESTORE
 
 
@@ -32,6 +33,18 @@ def send_size(sock, size=None):
     payload = struct.pack("!HH", min(cols, 65535), min(rows, 65535))
     payload = payload.replace(b"\xff", b"\xff\xff")
     sock.sendall(bytes((IAC, SB, NAWS)) + payload + bytes((IAC, SE)))
+
+
+def send_ssh_address(sock):
+    connection = os.environ.get("SSH_CONNECTION", "").split()
+    if len(connection) != 4:
+        return
+    try:
+        address = str(ipaddress.ip_address(connection[2]))
+    except ValueError:
+        return
+    sock.sendall(bytes((IAC, SB, SSH_ADDRESS)) + address.encode("ascii")
+                 + bytes((IAC, SE)))
 
 
 def write_all(fd, data: bytes):
@@ -75,6 +88,7 @@ def main():
         old = termios.tcgetattr(stdin_fd)
         tty.setraw(stdin_fd)
         filtro = TelnetFilter()
+        send_ssh_address(sock)
         last_size = window_size()
         send_size(sock, last_size)
         while not flags["stop"]:

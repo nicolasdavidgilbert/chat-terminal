@@ -46,6 +46,7 @@ class BridgeTests(unittest.TestCase):
             [sys.executable, str(Path(__file__).resolve().parents[1] / "ssh-bridge.py"),
              "127.0.0.1", str(server.port)],
             stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
+            env={**os.environ, "SSH_CONNECTION": "192.168.1.100 54321 192.168.1.166 22"},
         )
         screen = pyte.Screen(40, 12)
         stream = pyte.ByteStream(screen)
@@ -63,7 +64,8 @@ class BridgeTests(unittest.TestCase):
                     stream.feed(data)
 
         try:
-            until("Apodo:")
+            until("chat@192.168.1.166 apodo:")
+            self.assertNotIn(b"chat@ubuntu apodo:", received)
             self.assertFalse(termios.tcgetattr(slave)[3] & termios.ECHO)
             os.write(master, b"ana\r")
             until("Conectado como ana")

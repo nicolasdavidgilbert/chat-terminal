@@ -73,6 +73,7 @@ class Terminal:
     def __init__(self, send: Callable[[str], None], hostname: str, color: bool = True):
         self.send = send
         self.hostname = safe_text(hostname)[:32] or "chat"
+        self.login_host = self.hostname
         self.color = color
         self.width, self.height = 80, 24
         self.nick = ""
@@ -81,7 +82,8 @@ class Terminal:
         self.entries: deque[Entry] = deque(maxlen=300)
 
     def prefix(self) -> list[Span]:
-        return prompt(self.nick, self.hostname) if self.nick else [("", "Apodo: ")]
+        return (prompt(self.nick, self.hostname) if self.nick
+                else [("", f"chat@{self.login_host} apodo: ")])
 
     def _erase(self) -> str:
         if not self.drawn:
@@ -161,6 +163,11 @@ class Terminal:
         if (width, height) == (self.width, self.height):
             return
         self.width, self.height = width, height
+        if not self.nick:
+            # The SSH command and password prompt belong to the client. Keep
+            # them visible while choosing a nickname, including initial NAWS.
+            self.redraw(editor)
+            return
         prefix = self.prefix()
         offset = sum(len(text) for _, text in prefix) + editor.cursor
         rows, (row, column) = layout(prefix + [("", editor.line)], width,
@@ -188,6 +195,7 @@ class Terminal:
     def dispose(self):
         self.entries.clear()
         self.nick = ""
+        self.login_host = self.hostname
         self.drawn = False
         self.cursor_row = 0
 

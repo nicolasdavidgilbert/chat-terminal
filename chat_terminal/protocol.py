@@ -1,10 +1,13 @@
 """Telnet y teclas incrementales; independiente del chat y de su presentación."""
 
 import codecs
+import ipaddress
 from dataclasses import dataclass
 
 IAC, DONT, DO, WONT, WILL, SB, SE = 255, 254, 253, 252, 251, 250, 240
 ECHO, SGA, NAWS, LINEMODE = 1, 3, 31, 34
+# Private bridge metadata: the server address of this particular SSH session.
+SSH_ADDRESS = 200
 NEGOTIATION = bytes((IAC, WILL, ECHO, IAC, WILL, SGA,
                      IAC, DO, NAWS, IAC, DONT, LINEMODE))
 MAX_INPUT = 400
@@ -86,6 +89,13 @@ class Protocol:
                         height = int.from_bytes(self.sub[3:5], "big")
                         if width and height:
                             events.append(Event("resize", (width, height)))
+                    elif self.sub and self.sub[0] == SSH_ADDRESS:
+                        try:
+                            address = str(ipaddress.ip_address(bytes(self.sub[1:]).decode("ascii")))
+                        except (ValueError, UnicodeDecodeError):
+                            pass
+                        else:
+                            events.append(Event("ssh_address", address))
                     self.sub.clear()
                     self.telnet_state = "data"
                 else:

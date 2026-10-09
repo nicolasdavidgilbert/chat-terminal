@@ -34,6 +34,13 @@ python -m chat_terminal --port 2424 --prompt-host ubuntu
 python ssh-bridge.py 127.0.0.1 2424
 ```
 
+Tras autenticar por SSH, el chat pide `chat@<IP del servidor> apodo:` sin limpiar
+la salida anterior. El puente obtiene la dirección de destino de `SSH_CONNECTION`,
+por lo que cambia automáticamente entre la red de casa y la de clase. Sin SSH,
+se usa el nombre del servidor. Los intentos de apodo quedan visibles y, si fallan,
+se muestra el error y se repite la petición. La bienvenida aparece después de
+aceptar el apodo y muestra la versión real del sistema y del kernel.
+
 `--no-color` desactiva los colores del prompt. La interfaz necesita un terminal
 compatible con ANSI/VT y UTF-8; los colores y la representación de emoji dependen
 del emulador y su fuente. Al redimensionar, se reconstruye la pantalla con las

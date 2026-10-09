@@ -113,6 +113,16 @@ class TerminalTests(unittest.TestCase):
         self.terminal.dispose()
         self.assertFalse(self.terminal.entries)
 
+    def test_nickname_prompt_keeps_previous_ssh_output(self):
+        self.terminal.nick = ""
+        self.stream.feed("$ ssh chat@ubuntu\r\nchat@ubuntu's password: \r\n")
+        self.terminal.redraw(self.editor)
+        self.screen.resize(lines=16, columns=60)
+        self.terminal.resize(60, 16, self.editor)
+        self.assertEqual(self.screen.display[0].strip(), "$ ssh chat@ubuntu")
+        self.assertEqual(self.screen.display[1].strip(), "chat@ubuntu's password:")
+        self.assertEqual(self.screen.display[2].strip(), "chat@ubuntu apodo:")
+
     def test_user_listing_colors_are_relative_to_viewer(self):
         entry = Entry("", kind="users", names=("ana", "bea"))
         self.terminal.output([entry], self.editor)

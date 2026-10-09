@@ -1,9 +1,21 @@
 import unittest
 
-from chat_terminal.protocol import Event, IAC, NAWS, Protocol, SB, SE, TelnetFilter
+from chat_terminal.protocol import Event, IAC, NAWS, Protocol, SB, SE, SSH_ADDRESS, TelnetFilter
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_ssh_address_metadata_handles_split_ipv4_ipv6_and_invalid_input(self):
+        for address in ("192.168.1.166", "2001:db8::1"):
+            parser = Protocol()
+            packet = bytes((IAC, SB, SSH_ADDRESS)) + address.encode() + bytes((IAC, SE))
+            events = []
+            for byte in packet:
+                events.extend(parser.feed(bytes((byte,))))
+            self.assertEqual(events, [Event("ssh_address", address)])
+        for address in (b"ubuntu", b"\xff\xff", b"192.168.1.166\x1b[2J", b"x" * 10000):
+            packet = bytes((IAC, SB, SSH_ADDRESS)) + address + bytes((IAC, SE))
+            self.assertEqual(Protocol().feed(packet), [])
+
     def test_split_utf8_and_keys_preserve_order(self):
         protocol = Protocol()
         events = []
