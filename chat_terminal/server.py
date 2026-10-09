@@ -13,6 +13,13 @@ from .editor import Editor, safe_text
 from .protocol import Event, NEGOTIATION, Protocol
 from .terminal import Entry, START, Terminal
 
+WELCOME = (
+    Entry("CHAT PRIVADO DE CLASE · ENTORNO DE PRUEBA", kind="heading"),
+    Entry("Si te pilla el profe, es tu culpa."),
+    Entry("El host no da la cara. Aquí nadie suelta nombres.", kind="notice"),
+    Entry(""),
+)
+
 MAX_NICK = 12
 HELP = (
     Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
@@ -195,6 +202,8 @@ class Session:
             self.conn.sendall(event.value)
         elif event.kind == "resize":
             self.terminal.resize(*event.value, self.editor)
+            if not self.nick:
+                self.terminal.output(WELCOME, self.editor)
         elif event.kind == "key":
             if event.value == "tab":
                 if not self.nick:
@@ -226,7 +235,7 @@ class Session:
             self.conn.settimeout(1.0)
             self.conn.sendall(NEGOTIATION)
             self.send(START)
-            self.terminal.redraw(self.editor)
+            self.terminal.output(WELCOME, self.editor)
             while not self.stopping.is_set():
                 self.flush()
                 readable, _, _ = select.select([self.conn], [], [], 0.05)
