@@ -121,7 +121,7 @@ class TerminalTests(unittest.TestCase):
         self.terminal.resize(60, 16, self.editor)
         self.assertEqual(self.screen.display[0].strip(), "$ ssh chat@ubuntu")
         self.assertEqual(self.screen.display[1].strip(), "chat@ubuntu's password:")
-        self.assertEqual(self.screen.display[2].strip(), "chat@ubuntu apodo:")
+        self.assertEqual(self.screen.display[2].strip(), "chat@ubuntu's apodo:")
 
     def test_user_listing_colors_are_relative_to_viewer(self):
         entry = Entry("", kind="users", names=("ana", "bea"))

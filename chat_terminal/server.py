@@ -13,7 +13,7 @@ import unicodedata
 
 from .editor import Editor, safe_text
 from .protocol import Event, NEGOTIATION, Protocol
-from .terminal import Entry, START, Terminal
+from .terminal import Entry, Terminal
 
 def system_welcome() -> str:
     try:
@@ -32,9 +32,28 @@ WELCOME = (
     Entry(" * Management:     https://landscape.canonical.com"),
     Entry(" * Support:        https://ubuntu.com/pro"),
     Entry(""),
+    Entry("Aviso de acceso:"),
+    Entry("  Si te pilla el profe, es tu problema."),
+    Entry("  El host no se hace responsable."),
+    Entry(""),
+    Entry("No compartas nombres ni datos personales."),
     Entry("Esta sesión es privada. El historial se borra al salir."),
     Entry(""),
 )
+
+
+def system_information(address: str) -> tuple[Entry, ...]:
+    """Bloque decorativo: las cifras son ficticias; fecha y dirección son reales."""
+    stamp = time.strftime("%a %d %b %Y %H:%M:%S UTC", time.gmtime())
+    return (
+        Entry(f" System information as of {stamp}"),
+        Entry(""),
+        Entry("  System load:  0.03              Processes:               106"),
+        Entry("  Usage of /:   67.7% of 11.21GB  Users logged in:         1"),
+        Entry(f"  Memory usage: 13%               IP address:              {address}"),
+        Entry("  Swap usage:   0%"),
+        Entry(""),
+    )
 
 MAX_NICK = 12
 HELP = (
@@ -179,7 +198,7 @@ class Session:
         if not self.nick:
             # Leave each submitted attempt above the next prompt, like SSH.
             self.terminal.output([
-                Entry(f"chat@{self.terminal.login_host} apodo: {safe_text(text)}")
+                Entry(f"chat@{self.terminal.login_host}'s apodo: {safe_text(text)}")
             ], self.editor)
             nick = unicodedata.normalize("NFC", text.strip())
             if not re.fullmatch(rf"[\w.-]{{1,{MAX_NICK}}}", nick, re.UNICODE):
@@ -192,7 +211,8 @@ class Session:
                 # Nick input must not become part of the chat's editing history.
                 self.editor.dispose()
                 self.terminal.nick = nick
-                for entry in WELCOME:
+                welcome = WELCOME[:6] + system_information(self.terminal.login_host) + WELCOME[6:]
+                for entry in welcome:
                     self.enqueue(entry)
                 self.enqueue(Entry(
                     f"Conectado como {nick}. Escribe /ayuda para ver los comandos."
@@ -293,7 +313,7 @@ class Session:
             # Timeout bounds a blocked send. select avoids polling recv timeouts.
             self.conn.settimeout(1.0)
             self.conn.sendall(NEGOTIATION)
-            self.send(START)
+            self.terminal.begin_login()
             # Read the bridge's initial address/size before printing a prompt.
             # Direct Telnet clients receive the normal hostname after 100 ms.
             readable, _, _ = select.select([self.conn], [], [], 0.1)

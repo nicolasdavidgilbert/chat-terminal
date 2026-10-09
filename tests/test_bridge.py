@@ -64,8 +64,9 @@ class BridgeTests(unittest.TestCase):
                     stream.feed(data)
 
         try:
-            until("chat@192.168.1.166 apodo:")
-            self.assertNotIn(b"chat@ubuntu apodo:", received)
+            until("chat@192.168.1.166's apodo:")
+            self.assertNotIn(b"chat@ubuntu's apodo:", received)
+            self.assertEqual(received.count(b"Permiso aprobado. Introduzca apodo."), 1)
             self.assertFalse(termios.tcgetattr(slave)[3] & termios.ECHO)
             os.write(master, b"ana\r")
             until("Conectado como ana")

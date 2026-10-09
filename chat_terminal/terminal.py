@@ -83,7 +83,12 @@ class Terminal:
 
     def prefix(self) -> list[Span]:
         return (prompt(self.nick, self.hostname) if self.nick
-                else [("", f"chat@{self.login_host} apodo: ")])
+                else [("", f"chat@{self.login_host}'s apodo: ")])
+
+    def begin_login(self):
+        entry = Entry("Permiso aprobado. Introduzca apodo.")
+        self.entries.append(entry)
+        self.send(START + entry.text + "\r\n")
 
     def _erase(self) -> str:
         if not self.drawn:
