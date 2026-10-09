@@ -9,11 +9,11 @@ autocompletado con Tab y acceso mediante un puente SSH.
 python3 tui-terminal-tab-colores.py
 ```
 
-Escucha en `127.0.0.1:2323`. El puente `backup/ssh-bridge.py` permite conectar
+Escucha en `127.0.0.1:2323`. El puente `ssh-bridge.py` permite conectar
 un terminal local o una sesión SSH al chat:
 
 ```bash
-python3 backup/ssh-bridge.py
+python3 ssh-bridge.py
 ```
 
 El servidor actual delega la autenticación en SSH; configurar el puente como
@@ -26,7 +26,9 @@ cuando la entrada está vacía. No ejecuta comandos del sistema.
 ## Evolución conservada
 
 Los commits reconstruyen las etapas a partir de los archivos originales,
-sin modificar su código ni inventar fechas históricas.
+sin modificar su código ni inventar fechas históricas. Las versiones anteriores
+se conservan en el historial de Git; la carpeta de trabajo contiene únicamente
+la versión actual y el puente SSH. Las rutas de la tabla son las históricas.
 
 | Etapa | Archivo | Rama |
 | --- | --- | --- |
