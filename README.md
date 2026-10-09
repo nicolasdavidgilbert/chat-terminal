@@ -36,12 +36,66 @@ python ssh-bridge.py 127.0.0.1 2424
 
 `--no-color` desactiva los colores del prompt. La interfaz necesita un terminal
 compatible con ANSI/VT y UTF-8; los colores y la representación de emoji dependen
-del emulador y su fuente. Al redimensionar, se vuelve a dibujar la entrada en la
-pantalla visible; no se reconstruye un archivo de conversación en el servidor.
+del emulador y su fuente. Al redimensionar, se reconstruye la pantalla con las
+últimas entradas entregadas, conservando el borrador y la posición del cursor.
+El búfer de presentación contiene hasta 300 entradas en RAM por sesión.
 
 Para acceso remoto, ejecutar el puente en el servidor como `ForceCommand` de SSH
-con un pseudo-terminal (`ssh -t`). La autenticación y el cifrado los proporciona
-SSH; su configuración se hace por separado. El chat no ejecuta órdenes del sistema.
+con un pseudo-terminal. Desde un terminal basta con `ssh chat@ip_server`; si el
+cliente no solicita PTY, usar `ssh -t chat@ip_server`. El puente rechaza conexiones
+sin terminal. La autenticación y el cifrado los proporciona SSH. El chat no ejecuta
+órdenes del sistema.
+
+## Despliegue SSH
+
+Instalar juntos `chat_terminal/` y el puente, copiando `ssh-bridge.py` como
+`/opt/chat/ssh_chat_bridge.py`. El servidor debe ejecutar el mismo paquete y
+escuchar en `127.0.0.1:2323`. La cuenta `chat` necesita leer los archivos, pero no
+debe poder modificarlos: usar propietario `root` y permisos de lectura/ejecución
+sin escritura para `chat` (también en el directorio `/opt/chat`).
+
+Comprobar las dependencias con el intérprete del ForceCommand:
+
+```bash
+cd /opt/chat
+/usr/bin/python3 -c 'import wcwidth; from chat_terminal.protocol import TelnetFilter'
+```
+
+Si falta `wcwidth`, instalar la versión requerida en un entorno virtual de
+despliegue y usar su ruta absoluta de Python tanto para el servidor como para el
+ForceCommand. No basta con que funcione en el entorno virtual de desarrollo.
+
+Configurar este bloque al final de `/etc/ssh/sshd_config`, manteniendo las demás
+cuentas con su configuración habitual:
+
+```text
+Match User chat
+    ForceCommand /usr/bin/python3 /opt/chat/ssh_chat_bridge.py
+    PermitTTY yes
+    PasswordAuthentication yes
+    DisableForwarding yes
+    PermitUserRC no
+    AllowTcpForwarding no
+    X11Forwarding no
+    AllowAgentForwarding no
+    ClientAliveInterval 60
+```
+
+Guardar una copia de la configuración y de la aplicación anteriores. Con una
+sesión administrativa abierta, validar antes de recargar:
+
+```bash
+sudo sshd -t
+sudo sshd -T -C user=chat,host=cliente,addr=192.0.2.10
+```
+
+Sustituir `host` y `addr` por los del cliente real y verificar `forcecommand`,
+`permittty`, `passwordauthentication`, `disableforwarding` y `permituserrc` en la
+salida. Recargar la unidad del servicio SSH de la distribución (en Ubuntu,
+`sudo systemctl reload ssh`) y probar una conexión nueva antes de cerrar la
+sesión administrativa. Probar también redimensionamiento, desconexión y ráfagas
+con dos participantes. Si falla, restaurar aplicación y configuración anteriores,
+validar y recargar de nuevo. No se necesitan cambios en PAM.
 
 ## Comandos y teclas
 
@@ -84,18 +138,30 @@ de pegado protegido tratará los saltos de línea como Enter.
 
 ## Sesiones y privacidad
 
+Cada conexión puede enviar una ráfaga de cinco mensajes públicos o privados.
+Se recupera un permiso por segundo, hasta cinco; ambos tipos comparten el límite.
+Sin permisos, el mensaje se descarta y solo su remitente recibe
+`[aviso privado] Vas demasiado rápido. Espera un segundo.` Como máximo se muestra
+un aviso por segundo. Los intentos rechazados no retrasan la recuperación y no se
+reenvían automáticamente. Comandos locales y privados inválidos no consumen
+permisos. El historial propio puede incluir intentos rechazados. Al reconectar
+se empieza con cinco permisos; el límite no identifica personas ni direcciones IP.
+
 Los avisos `ana se ha unido.` y `ana ha salido.` se muestran en el chat, sin
 fechas ni horas. No se imprimen los eventos de usuarios en la consola del servidor.
 
 No se guardan mensajes, apodos, historial ni eventos en archivos o bases de datos.
 Cada conexión mantiene únicamente estado temporal: hasta 300 entradas propias,
-una línea de hasta 400 bytes UTF-8 y una cola limitada de mensajes por entregar.
-Al terminar su hilo se vacían el historial, borrador, datos de protocolo y cola, y se retira el usuario del registro. Una reconexión empieza vacía.
+300 entradas de presentación ya entregadas, una línea de hasta 400 bytes UTF-8,
+una cola limitada de mensajes por entregar y el estado del límite de envío.
+Al terminar su hilo se vacían el historial, búfer de presentación, borrador, datos
+de protocolo y cola, y se retira el usuario del registro. Una reconexión empieza vacía.
 No hay búsqueda de texto ni historial compartido entre sesiones.
 
 El terminal de cada participante puede conservar su propio scroll local. `clear`
-y Ctrl+L no ordenan borrar ese scroll. Los avisos y mensajes ya entregados no se
-conservan como historial de conversación en el servidor.
+y Ctrl+L no ordenan borrar ese scroll, pero vacían el búfer de presentación para
+que sus mensajes no reaparezcan al redimensionar. El búfer solo sirve para
+reconstruir la pantalla de esa sesión y no se comparte ni se recupera al reconectar.
 
 Las conexiones lentas no bloquean a otros participantes: cada cliente tiene una
 cola de salida; si se llena o la escritura agota su tiempo de espera, se cierra

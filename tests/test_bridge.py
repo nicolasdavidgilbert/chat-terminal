@@ -20,7 +20,22 @@ from chat_terminal.server import ChatServer
 
 
 class BridgeTests(unittest.TestCase):
+    def test_requires_terminal_before_connecting(self):
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parents[1] / "ssh-bridge.py")],
+            input=b"", capture_output=True, timeout=3,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"ssh -t chat@ip_server", result.stderr)
+        self.assertNotIn(b"No se pudo conectar", result.stderr)
+
     def test_raw_terminal_resize_and_restoration_on_signal(self):
+        self.check_terminal_restoration(disconnect=False)
+
+    def test_raw_terminal_restoration_on_server_disconnect(self):
+        self.check_terminal_restoration(disconnect=True)
+
+    def check_terminal_restoration(self, disconnect):
         server = ChatServer(0, "ubuntu", color=False)
         thread = threading.Thread(target=server.serve)
         thread.start()
@@ -61,7 +76,10 @@ class BridgeTests(unittest.TestCase):
             # NAWS travels from the bridge to the server and redraws the draft.
             os.write(master, b"\x1b[D!\r")
             until("hola á!中")
-            process.send_signal(signal.SIGTERM)
+            if disconnect:
+                server.stop()
+            else:
+                process.send_signal(signal.SIGTERM)
             process.wait(timeout=3)
             self.assertEqual(process.returncode, 0)
             self.assertEqual(termios.tcgetattr(slave), original)

@@ -69,6 +69,50 @@ class TerminalTests(unittest.TestCase):
         self.terminal.redraw(self.editor)
         self.assertLess(self.screen.cursor.y, 3)
 
+    def test_resize_rebuilds_messages_and_preserves_unicode_cursor(self):
+        self.terminal.output([Entry("mensaje antiguo"), Entry("hola 中", "bea", kind="message")], self.editor)
+        self.editor.insert("á中e\u0301" + "x" * 40)
+        self.editor.key("home")
+        self.editor.key("right")
+        expected = (self.editor.line, self.editor.cursor)
+        for width, height in ((20, 10), (60, 15), (8, 3), (40, 12)):
+            self.screen.resize(lines=height, columns=width)
+            self.terminal.resize(width, height, self.editor)
+            self.assertEqual((self.editor.line, self.editor.cursor), expected)
+            self.assertLess(self.screen.cursor.y, height)
+            self.assertLess(self.screen.cursor.x, width)
+        self.assertIn("mensaje antiguo", "\n".join(self.screen.display))
+        self.assertIn("bea@ubuntu:~$ hola 中", "\n".join(self.screen.display))
+        self.assertEqual((self.screen.cursor.x, self.screen.cursor.y), (15, 2))
+        self.terminal.output([Entry("entrante tras resize")], self.editor)
+        self.assertIn("entrante tras resize", "\n".join(self.screen.display))
+        self.assertEqual((self.screen.cursor.x, self.screen.cursor.y), (15, 3))
+        self.assertEqual((self.editor.line, self.editor.cursor), expected)
+
+    def test_resize_does_not_scroll_and_clear_does_not_resurrect_messages(self):
+        for index in range(30):
+            self.terminal.output([Entry(f"mensaje {index}")], self.editor)
+        old_history = list(self.screen.history.top)
+        self.screen.resize(lines=10, columns=30)
+        self.terminal.resize(30, 10, self.editor)
+        self.assertEqual(list(self.screen.history.top), old_history)
+        snapshot = self.screen.display[:]
+        self.terminal.resize(30, 10, self.editor)
+        self.assertEqual(self.screen.display, snapshot)
+        self.editor.insert("borrador")
+        self.terminal.clear(self.editor)
+        self.screen.resize(lines=12, columns=40)
+        self.terminal.resize(40, 12, self.editor)
+        self.assertNotIn("mensaje", "\n".join(self.screen.display))
+        self.assertIn("borrador", "\n".join(self.screen.display))
+
+    def test_presentation_buffer_is_bounded_and_disposed(self):
+        self.terminal.output((Entry(str(index)) for index in range(305)), self.editor)
+        self.assertEqual(len(self.terminal.entries), 300)
+        self.assertEqual(self.terminal.entries[0].text, "5")
+        self.terminal.dispose()
+        self.assertFalse(self.terminal.entries)
+
     def test_user_listing_colors_are_relative_to_viewer(self):
         entry = Entry("", kind="users", names=("ana", "bea"))
         self.terminal.output([entry], self.editor)

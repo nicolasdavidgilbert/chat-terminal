@@ -7,7 +7,8 @@ import unittest
 import pyte
 
 from chat_terminal.protocol import TelnetFilter
-from chat_terminal.server import ChatServer, Room, Session
+from chat_terminal.protocol import Event
+from chat_terminal.server import ChatServer, Room, Session, WELCOME
 
 
 class Client:
@@ -109,6 +110,7 @@ class ServerTests(unittest.TestCase):
             threading.Event().wait(0.01)
         self.assertEqual(old.editor.line, "")
         self.assertTrue(old.pending.empty())
+        self.assertFalse(old.terminal.entries)
         fresh = self.client("ana")
         fresh.send("\x1b[A")
         fresh.read()
@@ -155,6 +157,18 @@ class ServerTests(unittest.TestCase):
             local.close()
             remote.close()
 
+    def test_resize_before_nick_does_not_repeat_welcome(self):
+        local, remote = socket.socketpair()
+        session = Session(local, Room(), "ubuntu")
+        try:
+            session.terminal.output(WELCOME, session.editor)
+            session.event(Event("resize", (40, 12)))
+            session.event(Event("resize", (60, 16)))
+            self.assertEqual(list(session.terminal.entries), list(WELCOME))
+        finally:
+            local.close()
+            remote.close()
+
     def test_duplicate_names_and_unicode_normalization(self):
         ana = self.client("ana")
         other = Client(self.server.port)
@@ -181,3 +195,79 @@ class ServerTests(unittest.TestCase):
         ana.send("man chat\r")
         ana.until("Tu historial se borra al salir.")
         self.assertIn("CHAT(1)", "\n".join(ana.screen.display))
+
+    def test_burst_is_limited_and_warning_is_private(self):
+        ana = self.client("ana")
+        bea = self.client("bea")
+        ana.send("".join(f"ráfaga-{index}\r" for index in range(8)))
+        bea.until("ráfaga-4")
+        ana.until("Vas demasiado rápido")
+        bea.read()
+        self.assertNotIn("ráfaga-5".encode(), bea.data)
+        self.assertNotIn(b"Vas demasiado", bea.data)
+        self.assertEqual(ana.data.count(b"Vas demasiado"), 1)
+
+
+class RateLimitTests(unittest.TestCase):
+    def setUp(self):
+        self.room = Room()
+        self.sockets = []
+        self.now = 0.0
+        self.ana = self.session("ana")
+        self.bea = self.session("bea")
+
+    def session(self, nick):
+        local, remote = socket.socketpair()
+        self.sockets.extend((local, remote))
+        session = Session(local, self.room, "ubuntu")
+        session.clock = lambda: self.now
+        session.token_time = self.now
+        self.room.register(session, nick)
+        return session
+
+    def tearDown(self):
+        for sock in self.sockets:
+            sock.close()
+
+    def entries(self, session):
+        result = []
+        while not session.pending.empty():
+            result.append(session.pending.get_nowait())
+        return result
+
+    def test_refill_boundaries_and_rejected_attempts_do_not_delay(self):
+        for _ in range(5):
+            self.assertTrue(self.ana.allow_message())
+        self.assertFalse(self.ana.allow_message())
+        self.now = 0.99
+        self.assertFalse(self.ana.allow_message())
+        self.now = 1.0
+        self.assertTrue(self.ana.allow_message())
+        self.assertFalse(self.ana.allow_message())
+        self.assertEqual(len(self.entries(self.ana)), 2)
+        self.now = 100
+        for _ in range(5):
+            self.assertTrue(self.ana.allow_message())
+        self.assertFalse(self.ana.allow_message())
+
+    def test_public_private_share_limit_and_sessions_are_independent(self):
+        for index in range(4):
+            self.ana.line(f"publico-{index}")
+        self.ana.line("/msg bea privado")
+        self.ana.line("/msg bea rechazado")
+        self.ana.line("publico rechazado")
+        delivered = self.entries(self.bea)
+        self.assertEqual(len(delivered), 5)
+        self.assertEqual(delivered[-1].kind, "private")
+        notices = self.entries(self.ana)
+        self.assertEqual(sum("Vas demasiado" in entry.text for entry in notices), 1)
+        self.bea.line("independiente")
+        self.assertEqual(self.entries(self.ana)[0].text, "independiente")
+
+    def test_invalid_private_messages_and_commands_do_not_consume_tokens(self):
+        for text in ("/msg", "/msg nadie hola", "/msg ana hola", "/help", "ls", "", "/desconocido"):
+            self.ana.line(text)
+        self.assertEqual(self.ana.message_tokens, 5)
+        for _ in range(5):
+            self.ana.allow_message()
+        self.assertFalse(self.ana.line("exit"))

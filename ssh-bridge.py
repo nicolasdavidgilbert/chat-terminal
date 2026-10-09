@@ -27,8 +27,8 @@ def window_size():
     return (cols or 80), (rows or 24)
 
 
-def send_size(sock):
-    cols, rows = window_size()
+def send_size(sock, size=None):
+    cols, rows = window_size() if size is None else size
     payload = struct.pack("!HH", min(cols, 65535), min(rows, 65535))
     payload = payload.replace(b"\xff", b"\xff\xff")
     sock.sendall(bytes((IAC, SB, NAWS)) + payload + bytes((IAC, SE)))
@@ -49,6 +49,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("el puerto debe estar entre 1 y 65535")
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        parser.exit(1, "Se necesita un terminal. Usa: ssh -t chat@ip_server\n")
     try:
         sock = socket.create_connection((args.host, args.port), timeout=5)
     except OSError as error:
@@ -70,18 +72,19 @@ def main():
         for sig, handler in ((signal.SIGWINCH, resize), (signal.SIGTERM, stop),
                              (signal.SIGHUP, stop), (signal.SIGINT, stop)):
             handlers[sig] = signal.signal(sig, handler)
-        try:
-            old = termios.tcgetattr(stdin_fd)
-            tty.setraw(stdin_fd)
-        except termios.error:
-            pass  # Also accepts redirected stdin; SSH should normally use -t.
+        old = termios.tcgetattr(stdin_fd)
+        tty.setraw(stdin_fd)
         filtro = TelnetFilter()
-        send_size(sock)
+        last_size = window_size()
+        send_size(sock, last_size)
         while not flags["stop"]:
             readable, _, _ = select.select([sock, stdin_fd], [], [], 0.1)
             if flags["resized"]:
                 flags["resized"] = False
-                send_size(sock)
+                size = window_size()
+                if size != last_size:
+                    send_size(sock, size)
+                    last_size = size
             if sock in readable:
                 data = sock.recv(4096)
                 if not data:
@@ -92,7 +95,7 @@ def main():
                 if not keys:
                     break
                 sock.sendall(keys.replace(b"\xff", b"\xff\xff"))
-    except (OSError, KeyboardInterrupt):
+    except (OSError, termios.error, KeyboardInterrupt):
         pass
     finally:
         try:

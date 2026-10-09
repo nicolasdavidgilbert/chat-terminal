@@ -7,6 +7,7 @@ import select
 import signal
 import socket
 import threading
+import time
 import unicodedata
 
 from .editor import Editor, safe_text
@@ -24,7 +25,6 @@ MAX_NICK = 12
 HELP = (
     Entry(""),
     Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
-    Entry(""),
     Entry("NOMBRE", kind="heading"),
     Entry("  chat — conversación con edición de línea tipo Bash"),
     Entry(""),
@@ -45,8 +45,8 @@ HELP = (
     Entry("  Tab                   Completar comandos, /msg y @apodo", kind="manual"),
     Entry("  Ctrl+C / Ctrl+L       Cancelar la entrada / limpiar pantalla", kind="manual"),
     Entry("  Ctrl+D                Borrar; salir si la entrada está vacía", kind="manual"),
-    Entry(""),
     Entry("Tu historial se borra al salir. Las menciones no envían avisos."),
+    Entry("Máximo 5 mensajes seguidos; recuperas uno por segundo."),
 )
 
 
@@ -107,6 +107,24 @@ class Session:
         self.pending: Queue[Entry] = Queue(maxsize=300)
         self.stopping = threading.Event()
         self.state_lock = threading.Lock()
+        self.clock = time.monotonic
+        self.message_tokens = 5.0
+        self.token_time = self.clock()
+        self.last_rate_notice = float("-inf")
+
+    def allow_message(self) -> bool:
+        now = self.clock()
+        self.message_tokens = min(5.0, self.message_tokens + max(0, now - self.token_time))
+        self.token_time = now
+        if self.message_tokens >= 1:
+            self.message_tokens -= 1
+            return True
+        if now - self.last_rate_notice >= 1:
+            self.enqueue(Entry(
+                "[aviso privado] Vas demasiado rápido. Espera un segundo."
+            ))
+            self.last_rate_notice = now
+        return False
 
     def send(self, data: str):
         self.conn.sendall(data.encode("utf-8"))
@@ -184,8 +202,18 @@ class Session:
                            for index, item in enumerate(self.editor.history, 1))
             self.terminal.output(entries, self.editor)
         elif command == "/msg":
-            error = ("Uso: /msg <apodo> <texto>" if len(parts) != 3 else
-                     self.room.private(self, parts[1], parts[2]))
+            error = "Uso: /msg <apodo> <texto>" if len(parts) != 3 else None
+            if error is None:
+                with self.room.lock:
+                    target = self.room.users.get(parts[1].casefold())
+                if target is None:
+                    error = f"No existe el usuario '{parts[1]}'."
+                elif target is self:
+                    error = "No puedes enviarte un mensaje a ti mismo."
+                elif not self.allow_message():
+                    return True
+                else:
+                    error = self.room.private(self, parts[1], parts[2])
             if error:
                 self.enqueue(Entry(text, self.nick, kind="message"))
                 self.enqueue(Entry(error))
@@ -195,7 +223,8 @@ class Session:
         elif not text.strip():
             self.enqueue(Entry("", self.nick, kind="message"))
         else:
-            self.room.broadcast(Entry(text, self.nick, kind="message"))
+            if self.allow_message():
+                self.room.broadcast(Entry(text, self.nick, kind="message"))
         return True
 
     def event(self, event: Event) -> bool:
@@ -206,8 +235,6 @@ class Session:
             self.conn.sendall(event.value)
         elif event.kind == "resize":
             self.terminal.resize(*event.value, self.editor)
-            if not self.nick:
-                self.terminal.output(WELCOME, self.editor)
         elif event.kind == "key":
             if event.value == "tab":
                 if not self.nick:
@@ -279,7 +306,10 @@ class Session:
                 except Empty:
                     break
             self.nick = ""
-            self.terminal.nick = ""
+            self.terminal.dispose()
+            self.message_tokens = 0.0
+            self.token_time = 0.0
+            self.last_rate_notice = float("-inf")
 
 
 class ChatServer:

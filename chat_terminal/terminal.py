@@ -1,6 +1,7 @@
 """Presentación ANSI incremental en la pantalla normal: conserva el scroll local."""
 
 from collections.abc import Callable, Iterable
+from collections import deque
 from dataclasses import dataclass
 import re
 
@@ -67,7 +68,7 @@ def layout(spans: Iterable[Span], width: int, cursor: int | None = None,
 
 
 class Terminal:
-    """Solo lo usa el hilo propietario del cliente; no guarda conversaciones."""
+    """Presentación y búfer efímero, usados solo por el hilo del cliente."""
 
     def __init__(self, send: Callable[[str], None], hostname: str, color: bool = True):
         self.send = send
@@ -77,6 +78,7 @@ class Terminal:
         self.nick = ""
         self.cursor_row = 0
         self.drawn = False
+        self.entries: deque[Entry] = deque(maxlen=300)
 
     def prefix(self) -> list[Span]:
         return prompt(self.nick, self.hostname) if self.nick else [("", "Apodo: ")]
@@ -141,23 +143,53 @@ class Terminal:
     def output(self, entries: Iterable[Entry], editor: Editor):
         buf = [f"{ESC}[?25l", self._erase()]
         for entry in entries:
+            self.entries.append(entry)
             rows, _ = layout(self.spans(entry), self.width, color=self.color)
             buf.append("\r\n".join(rows) + RESET + "\r\n")
         buf.extend((self._input(editor), f"{ESC}[?25h"))
         self.send("".join(buf))
 
     def clear(self, editor: Editor):
+        self.entries.clear()
         self.drawn = False
         self.cursor_row = 0
         # Do not erase the terminal's scrollback with CSI 3 J.
         self.send(f"{ESC}[2J{ESC}[H" + self._input(editor))
 
     def resize(self, width: int, height: int, editor: Editor):
-        self.width = max(1, min(width, 1000))
-        self.height = max(2, min(height, 500))
-        # After a resize, the emulator may reflow rows differently. Re-anchor
-        # the prompt; clearing the visible page leaves local scrollback intact.
-        self.clear(editor)
+        width, height = max(1, min(width, 1000)), max(2, min(height, 500))
+        if (width, height) == (self.width, self.height):
+            return
+        self.width, self.height = width, height
+        prefix = self.prefix()
+        offset = sum(len(text) for _, text in prefix) + editor.cursor
+        rows, (row, column) = layout(prefix + [("", editor.line)], width,
+                                     offset, self.color)
+        available = height - 1
+        start = max(0, min(row, len(rows) - available))
+        input_rows = rows[start:start + available]
+        history_rows = []
+        for entry in self.entries:
+            history_rows.extend(layout(self.spans(entry), width, color=self.color)[0])
+        room = height - len(input_rows)
+        history_rows = history_rows[-room:]
+        visible = history_rows + input_rows
+        # Absolute positions avoid scrolling at the bottom or trusting the
+        # emulator's old cursor position after it reflows the previous screen.
+        buf = [f"{ESC}[?25l{ESC}[2J"]
+        for index, text in enumerate(visible, 1):
+            buf.append(f"{ESC}[{index};1H" + text + RESET)
+        self.cursor_row = row - start
+        self.drawn = True
+        buf.append(f"{ESC}[{len(history_rows) + self.cursor_row + 1};{column + 1}H"
+                   + f"{ESC}[?25h")
+        self.send("".join(buf))
+
+    def dispose(self):
+        self.entries.clear()
+        self.nick = ""
+        self.drawn = False
+        self.cursor_row = 0
 
     def choices(self, choices: tuple[str, ...], editor: Editor):
         cell_width = max(wcswidth(choice) for choice in choices) + 2
