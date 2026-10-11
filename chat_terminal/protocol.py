@@ -17,6 +17,7 @@ MAX_INPUT = 400
 class Event:
     kind: str
     value: str | bytes | tuple[int, int] = ""
+    truncated: bool = False
 
 
 KEYS = {
@@ -46,6 +47,7 @@ class Protocol:
         self.last_cr = False
         self.pasting = False
         self.paste = bytearray()
+        self.paste_truncated = False
 
     def reset(self):
         """Libera también datos de un pegado interrumpido al cerrar la sesión."""
@@ -135,16 +137,18 @@ class Protocol:
             if sequence == "[200~":
                 self.pasting = True
                 self.paste.clear()
+                self.paste_truncated = False
             elif sequence == "[201~" and self.pasting:
-                text = self.paste.decode("utf-8", "replace")
+                text = self.paste.decode("utf-8", "ignore" if self.paste_truncated else "replace")
                 text = "".join(
                     " " if ch in "\r\n\t" else ch
                     for ch in text
                     if ch.isprintable() or ch in "\r\n\t\u200d"
                 )
-                events.append(Event("paste", text))
+                events.append(Event("paste", text, self.paste_truncated))
                 self.pasting = False
                 self.paste.clear()
+                self.paste_truncated = False
             elif self.pasting:
                 # Control sequences inside pasted text never become key events.
                 pass
@@ -160,6 +164,8 @@ class Protocol:
         if self.pasting:
             if len(self.paste) < MAX_INPUT:
                 self.paste.append(byte)
+            else:
+                self.paste_truncated = True
             return
         if byte in (13, 10):
             if byte == 13 or not self.last_cr:

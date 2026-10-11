@@ -7,6 +7,7 @@ import re
 from wcwidth import iter_graphemes
 
 from .protocol import MAX_INPUT
+from .names import normalize_nick
 
 HISTORY_SIZE = 300
 COMMANDS = ("/msg", "/lista", "/clear", "/ayuda", "/salir", "/help",
@@ -158,7 +159,7 @@ class Editor:
             self.last_completion = None
             return EditResult("bell")
         matches = tuple(sorted((n for n in candidates
-                                if n.casefold().startswith(token.casefold())),
+                                if normalize_nick(n).startswith(normalize_nick(token))),
                                key=str.casefold))
         if not matches:
             self.last_completion = None
@@ -170,7 +171,7 @@ class Editor:
         signature = (self.line, self.cursor, matches)
         if len(matches) > 1 and self.last_completion == signature:
             return EditResult("choices", choices=matches)
-        if len(replacement) >= len(token):
+        if len(normalize_nick(replacement)) >= len(normalize_nick(token)):
             result = self.line[:start] + replacement + suffix
             if len(result.encode("utf-8")) > MAX_INPUT:
                 return EditResult("bell")

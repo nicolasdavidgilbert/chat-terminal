@@ -9,10 +9,10 @@ import signal
 import socket
 import threading
 import time
-import unicodedata
 
 from .editor import Editor, safe_text
-from .protocol import Event, NEGOTIATION, Protocol
+from .names import normalize_nick
+from .protocol import Event, MAX_INPUT, NEGOTIATION, Protocol
 from .terminal import Entry, Terminal
 
 def system_welcome() -> str:
@@ -106,16 +106,16 @@ class Room:
 
     def register(self, session: "Session", nick: str) -> bool:
         with self.lock:
-            key = nick.casefold()
+            key = normalize_nick(nick)
             if key in self.users:
                 return False
-            session.nick = nick
+            session.nick = key
             self.users[key] = session
             return True
 
     def remove(self, session: "Session"):
         with self.lock:
-            key = session.nick.casefold()
+            key = normalize_nick(session.nick)
             if self.users.get(key) is session:
                 del self.users[key]
 
@@ -131,7 +131,7 @@ class Room:
 
     def private(self, source: "Session", nick: str, text: str) -> str | None:
         with self.lock:
-            target = self.users.get(nick.casefold())
+            target = self.users.get(normalize_nick(nick))
         if target is None:
             return f"No existe el usuario '{nick}'."
         if target is source:
@@ -212,7 +212,7 @@ class Session:
             self.terminal.output([
                 Entry(f"chat@{self.terminal.login_host}'s apodo: {safe_text(text)}")
             ], self.editor)
-            nick = unicodedata.normalize("NFC", text.strip())
+            nick = normalize_nick(text.strip())
             if not re.fullmatch(rf"[\w.-]{{1,{MAX_NICK}}}", nick, re.UNICODE):
                 self.enqueue(Entry(
                     f"Apodo inválido: letras, números, _.-; máximo {MAX_NICK}."
@@ -260,7 +260,7 @@ class Session:
             error = "Uso: /msg <apodo> <texto>" if len(parts) != 3 else None
             if error is None:
                 with self.room.lock:
-                    target = self.room.users.get(parts[1].casefold())
+                    target = self.room.users.get(normalize_nick(parts[1]))
                 if target is None:
                     error = f"No existe el usuario '{parts[1]}'."
                 elif target is self:
@@ -291,8 +291,17 @@ class Session:
                 if self.terminal.drawn:
                     self.terminal.redraw(self.editor)
         elif event.kind in ("text", "paste"):
+            truncated = event.kind == "paste" and (
+                event.truncated or
+                len(safe_text(event.value).encode("utf-8")) >
+                MAX_INPUT - len(self.editor.line.encode("utf-8"))
+            )
             if not self.editor.insert(event.value):
                 self.send("\a")
+            if truncated:
+                self.enqueue(Entry(
+                    "[aviso privado] El texto pegado supera el límite y se ha recortado."
+                ))
         elif event.kind == "reply":
             self.conn.sendall(event.value)
         elif event.kind == "resize":

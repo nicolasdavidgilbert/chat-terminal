@@ -8,6 +8,7 @@ import re
 from wcwidth import iter_graphemes, wcswidth
 
 from .editor import Editor, safe_text
+from .names import normalize_nick
 
 ESC = "\x1b"
 RESET = f"{ESC}[0m"
@@ -123,11 +124,19 @@ class Terminal:
     def message_spans(self, text: str) -> list[Span]:
         spans = []
         end = 0
-        for match in re.finditer(r"(?<![\w.@-])@([\w.-]+)", text):
-            if not self.nick or match[1].casefold() != self.nick.casefold():
+        for match in re.finditer(r"(?<![\w.@\-\u0300-\u036f])@([\w.\-\u0300-\u036f]+)", text):
+            if not self.nick:
                 continue
-            spans.extend((("", text[end:match.start()]), (MENTION, match[0])))
-            end = match.end()
+            nickname = match[1]
+            # Prefer the full nickname; trailing dots may be sentence punctuation.
+            while nickname.endswith(".") and normalize_nick(nickname) != normalize_nick(self.nick):
+                nickname = nickname[:-1]
+            if normalize_nick(nickname) != normalize_nick(self.nick):
+                continue
+            end_of_mention = match.start() + 1 + len(nickname)
+            spans.extend((("", text[end:match.start()]),
+                          (MENTION, text[match.start():end_of_mention])))
+            end = end_of_mention
         spans.append(("", text[end:]))
         return spans
 
@@ -137,7 +146,7 @@ class Terminal:
             for index, nick in enumerate(entry.names):
                 if index:
                     spans.append(("", "  "))
-                style = CYAN if nick.casefold() == self.nick.casefold() else BLUE
+                style = CYAN if normalize_nick(nick) == normalize_nick(self.nick) else BLUE
                 spans.append((style, nick))
             return spans
         if entry.kind == "heading":

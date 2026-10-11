@@ -148,15 +148,27 @@ Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.
 Las menciones completas de tu propio `@apodo` aparecen en cian suave
 (`#7FAFAF`), sin negrita ni fondo, tanto en mensajes públicos como privados.
-La comparación ignora mayúsculas y minúsculas; los apodos de otras personas
-no se resaltan. No generan sonidos ni notificaciones. `--no-color` desactiva
+La comparación ignora mayúsculas, pero distingue tildes y la ñ; los apodos de otras personas
+no se resaltan. La puntuación posterior queda sin color, incluidos puntos y
+puntos suspensivos; se conservan los puntos que forman parte de tu apodo.
+No generan sonidos ni notificaciones. `--no-color` desactiva
 también este resaltado.
 
 El pegado protegido del terminal convierte los saltos de línea y tabulaciones
 en espacios y espera a que pulses Enter. Un cliente Telnet que no envíe las marcas
 de pegado protegido tratará los saltos de línea como Enter.
+Si un pegado protegido supera los 400 bytes UTF-8 disponibles en la línea,
+se recorta y solo quien lo ha pegado recibe un aviso privado. El texto sigue
+en el borrador hasta pulsar Enter.
 
 ## Sesiones y privacidad
+
+Los apodos se registran y muestran en minúsculas, conservando las tildes y la ñ:
+`JOSÉ` y `José` se convierten en `josé`, y `Peña` en `peña`.
+`josé` y `jose` son apodos distintos, igual que `peña` y `pena`.
+Los apodos que coincidan tras esa normalización no pueden usarse a la vez.
+La misma regla se aplica a destinatarios de `/msg`, Tab y menciones;
+el texto de los mensajes conserva sus mayúsculas y acentos originales.
 
 La bienvenida mantiene el formato de conexión SSH y aclara que los mensajes
 públicos son visibles para todos los conectados, mientras que `/msg` se entrega

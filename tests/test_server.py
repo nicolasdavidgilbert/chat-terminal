@@ -72,7 +72,7 @@ class ServerTests(unittest.TestCase):
         client = Client(self.server.port)
         self.clients.append(client)
         client.send(nick + "\r")
-        client.until("Conectado como " + nick)
+        client.until("Conectado como " + nick.lower())
         return client
 
     def test_public_private_completion_and_presence(self):
@@ -148,6 +148,26 @@ class ServerTests(unittest.TestCase):
         ana.until("300  history")
         self.assertFalse(session.stopping.is_set())
 
+    def test_paste_truncation_notice_is_private_and_does_not_submit(self):
+        ana = self.client("ana")
+        bea = self.client("bea")
+        for draft, paste in (("", "x" * 450), ("d" * 390, "x" * 20),
+                             ("d" * 400, "x")):
+            with self.subTest(draft_length=len(draft)):
+                ana.send("\x03" + draft + "\x1b[200~" + paste + "\x1b[201~")
+                deadline = time.monotonic() + 2
+                expected_count = ana.data.count(b"El texto pegado") + 1
+                while ana.data.count(b"El texto pegado") < expected_count:
+                    self.assertLess(time.monotonic(), deadline)
+                    ana.read(0.05)
+                bea.read(0.05)
+                self.assertNotIn(b"El texto pegado", bea.data)
+                self.assertNotIn(b"x" * 20, bea.data)
+                with self.server.room.lock:
+                    session = self.server.room.users["ana"]
+                    self.assertEqual(len(session.editor.line.encode()), 400)
+                    self.assertEqual(session.editor.history, [])
+
     def test_slow_client_queue_is_bounded_and_cleared(self):
         local, remote = socket.socketpair()
         session = Session(local, Room(), "ubuntu")
@@ -210,6 +230,23 @@ class ServerTests(unittest.TestCase):
         other.send("jose\u0301\r")
         other.until("Conectado como josé")
         ana.until("josé se ha unido.")
+        duplicate = Client(self.server.port)
+        self.clients.append(duplicate)
+        duplicate.send("JOSÉ\r")
+        duplicate.until("Ese apodo ya está en uso.")
+        ana.send("/msg JOSE\u0301 hola normalizado\r")
+        other.until("[privado] ana -> josé: hola normalizado")
+        unaccented = self.client("Jose")
+        self.assertIn("jose", self.server.room.names())
+        self.assertIn("josé", self.server.room.names())
+        ana.send("/msg JOSE sin tilde\r")
+        unaccented.until("[privado] ana -> jose: sin tilde")
+
+    def test_enye_and_other_accents_are_preserved(self):
+        self.client("PEÑA")
+        self.client("PENA")
+        self.client("ÁNGELA")
+        self.assertEqual(self.server.room.names(), ["pena", "peña", "ángela"])
 
     def test_login_timeout_closes_connection_and_releases_slot(self):
         client = Client(self.server.port)

@@ -42,8 +42,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(events, [Event("paste", "/msg ana hola  exit fin")])
         events = protocol.feed(b"\x1b[200~" + b"x" * 10000 + b"\x1b[201~")
         self.assertEqual(len(events[0].value), 400)
+        self.assertTrue(events[0].truncated)
+        events = protocol.feed(b"\x1b[200~ok\x1b[201~")
+        self.assertEqual(events, [Event("paste", "ok")])
         protocol.reset()
         self.assertEqual(protocol.paste, bytearray())
+
+    def test_truncated_paste_does_not_create_broken_utf8_character(self):
+        protocol = Protocol()
+        events = protocol.feed(b"\x1b[200~" + b"x" * 399 + "á".encode() + b"\x1b[201~")
+        self.assertEqual(events, [Event("paste", "x" * 399, truncated=True)])
 
     def test_filter_preserves_data_with_split_negotiation(self):
         parser = TelnetFilter()

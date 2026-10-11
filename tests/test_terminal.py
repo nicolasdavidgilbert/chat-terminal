@@ -167,6 +167,36 @@ class TerminalTests(unittest.TestCase):
         rows, _ = layout(spans, 80, color=False)
         self.assertEqual(rows, [text])
 
+    def test_mentions_with_punctuation_keep_punctuation_uncolored(self):
+        for suffix in (".", "...", ",", ";", ":", "!", "?", "…", ")", "]", "»"):
+            with self.subTest(suffix=suffix):
+                text = "hola (@ANA" + suffix
+                spans = self.terminal.message_spans(text)
+                self.assertEqual([part for style, part in spans if style], ["@ANA"])
+                self.assertEqual(spans[-1], ("", suffix))
+                self.assertEqual("".join(part for _, part in spans), text)
+
+    def test_mentions_preserve_dots_inside_and_at_end_of_nickname(self):
+        for nickname in ("ana.foo", "ana.", "ana.."):
+            with self.subTest(nickname=nickname):
+                self.terminal.nick = nickname
+                for suffix in ("", ".", "..."):
+                    spans = self.terminal.message_spans("@" + nickname + suffix)
+                    self.assertEqual([part for style, part in spans if style], ["@" + nickname])
+                    self.assertEqual(spans[-1], ("", suffix))
+
+    def test_mentions_normalize_accents_without_changing_message_text(self):
+        self.terminal.nick = "josé"
+        text = "@JOSÉ, @jose\u0301. @josefina @jose"
+        spans = self.terminal.message_spans(text)
+        self.assertEqual([part for style, part in spans if style], ["@JOSÉ", "@jose\u0301"])
+        self.assertEqual("".join(part for _, part in spans), text)
+
+    def test_mentions_distinguish_enye_from_n(self):
+        self.terminal.nick = "peña"
+        spans = self.terminal.message_spans("@PEÑA @pen\u0303a @pena")
+        self.assertEqual([part for style, part in spans if style], ["@PEÑA", "@pen\u0303a"])
+
     def test_manual_styles_and_plain_text_mode(self):
         self.terminal.output([
             Entry("COMANDOS", kind="heading"),

@@ -5,6 +5,16 @@ from chat_terminal.protocol import MAX_INPUT
 
 
 class EditorTests(unittest.TestCase):
+    def test_completion_normalizes_accents_and_case(self):
+        for prefix, expected in (("/msg JOSÉ", "/msg josé "),
+                                 ("/msg JOSE\u0301", "/msg josé "),
+                                 ("hola @JOSÉ", "hola @josé ")):
+            with self.subTest(prefix=prefix):
+                editor = Editor()
+                editor.insert(prefix)
+                self.assertEqual(editor.complete(["josé"]).action, "redraw")
+                self.assertEqual(editor.line, expected)
+
     def test_insert_delete_and_cursor(self):
         editor = Editor()
         editor.insert("hola mundo")
