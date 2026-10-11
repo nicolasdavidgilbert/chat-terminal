@@ -13,11 +13,11 @@ caracteres Unicode y editar grafemas completos (acentos, caracteres chinos y emo
 python3 -m venv .env
 source .env/bin/activate
 python -m pip install -r requirements.txt
-python tui-terminal-tab-colores.py
+python -m chat_terminal
 ```
 
 Si ya existe `.env`, basta con activarlo e instalar las dependencias. También se
-puede iniciar con `python -m chat_terminal`.
+puede iniciar con `python main.py`.
 
 En otro terminal, activa el mismo entorno y conecta el puente:
 
@@ -39,7 +39,11 @@ Tras autenticar por SSH, aparece `Permiso aprobado. Introduzca apodo.` y debajo
 El puente obtiene la dirección de destino de `SSH_CONNECTION`,
 por lo que cambia automáticamente entre la red de casa y la de clase. Sin SSH,
 se usa el nombre del servidor. Los intentos de apodo quedan visibles y, si fallan,
-se muestra el error y se repite la petición. La bienvenida aparece después de
+se muestra el error y se repite la petición. Hay 60 segundos desde que el chat
+acepta la conexión para elegir un apodo válido; escribir o enviar intentos
+inválidos no reinicia ese plazo. Al agotarse, se muestra un aviso y se cierra
+la conexión. Una vez aceptado el apodo, este límite deja de aplicarse.
+La bienvenida aparece después de
 aceptar el apodo y muestra la versión real del sistema y del kernel, seguida de
 un bloque decorativo con cifras ficticias de carga, procesos, disco, sesiones,
 memoria y swap. Solo la fecha UTC y la dirección de la conexión se actualizan.
@@ -150,6 +154,13 @@ de pegado protegido tratará los saltos de línea como Enter.
 
 ## Sesiones y privacidad
 
+La bienvenida mantiene el formato de conexión SSH y aclara que los mensajes
+públicos son visibles para todos los conectados, mientras que `/msg` se entrega
+solo al remitente y al destinatario. Esto no es cifrado de extremo a extremo:
+el administrador puede acceder al proceso del servidor y su memoria, y los
+participantes pueden copiar los mensajes. Los apodos no verifican identidades;
+al desconectarse alguien, otra persona puede usar el mismo apodo.
+
 Cada conexión puede enviar una ráfaga de cinco mensajes públicos o privados.
 Se recupera un permiso por segundo, hasta cinco; ambos tipos comparten el límite.
 Sin permisos, el mensaje se descarta y solo su remitente recibe
@@ -184,7 +195,7 @@ restaura el modo del terminal, el cursor y el pegado protegido al salir.
 ## Organización y comprobaciones
 
 `chat_terminal` separa el protocolo Telnet, la edición de línea, la presentación
-ANSI y el servidor. El archivo original sigue funcionando como lanzador; el
+ANSI y el servidor. `main.py` funciona como lanzador; el
 puente reutiliza el filtro Telnet del paquete. No se necesita un framework de TUI.
 
 ```bash

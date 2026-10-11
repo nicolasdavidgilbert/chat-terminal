@@ -36,8 +36,18 @@ WELCOME = (
     Entry("  Si te pilla el profe, es tu problema."),
     Entry("  El host no se hace responsable."),
     Entry(""),
-    Entry("No compartas nombres ni datos personales."),
-    Entry("Esta sesión es privada. El historial se borra al salir."),
+    Entry("Aviso de privacidad:"),
+    Entry("  No compartas nombres ni datos personales."),
+    Entry("  Los mensajes públicos son visibles para todos los conectados."),
+    Entry("  /msg entrega el mensaje solo a su remitente y destinatario."),
+    Entry("  El chat no guarda conversaciones en disco; usa memoria temporal."),
+    Entry("  Al salir se elimina el historial de esta sesión en el chat."),
+    Entry("  Tu terminal puede conservarlo y otros pueden copiar los mensajes."),
+    Entry("  El administrador del servidor puede acceder al proceso y su memoria."),
+    Entry(""),
+    Entry("Aviso de identidad:"),
+    Entry("  Los apodos no verifican la identidad de una persona."),
+    Entry("  Al desconectarse alguien, otra persona puede usar su apodo."),
     Entry(""),
 )
 
@@ -56,6 +66,7 @@ def system_information(address: str) -> tuple[Entry, ...]:
     )
 
 MAX_NICK = 12
+LOGIN_TIMEOUT = 60.0
 HELP = (
     Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
     Entry(""),
@@ -144,6 +155,7 @@ class Session:
         self.stopping = threading.Event()
         self.state_lock = threading.Lock()
         self.clock = time.monotonic
+        self.login_deadline = self.clock() + LOGIN_TIMEOUT
         self.message_tokens = 5.0
         self.token_time = self.clock()
         self.last_rate_notice = float("-inf")
@@ -217,7 +229,7 @@ class Session:
                 self.enqueue(Entry(
                     f"Conectado como {nick}. Escribe /ayuda para ver los comandos."
                 ))
-                self.room.broadcast(Entry(f"{nick} se ha unido.", kind="notice"))
+                self.room.broadcast(Entry(f"{nick} se ha unido.", kind="join"))
             return True
         # Preserve spaces in messages; commands alone are parsed with whitespace.
         parts = text.split(None, 2)
@@ -271,6 +283,8 @@ class Session:
         return True
 
     def event(self, event: Event) -> bool:
+        if self.login_expired():
+            return False
         if event.kind == "ssh_address":
             if not self.nick:
                 self.terminal.login_host = event.value
@@ -307,6 +321,15 @@ class Session:
                 self.send("\a")
         return True
 
+    def login_expired(self) -> bool:
+        if self.nick or self.clock() < self.login_deadline:
+            return False
+        self.terminal.output([
+            Entry("Tiempo de espera agotado: 60 segundos para elegir apodo."),
+            Entry("Conexión cerrada."),
+        ], self.editor)
+        return True
+
     def run(self):
         try:
             self.conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -329,6 +352,8 @@ class Session:
                 self.flush()
             self.terminal.redraw(self.editor)
             while not self.stopping.is_set():
+                if self.login_expired():
+                    break
                 self.flush()
                 readable, _, _ = select.select([self.conn], [], [], 0.05)
                 if not readable:

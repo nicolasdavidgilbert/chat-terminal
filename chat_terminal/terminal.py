@@ -18,6 +18,7 @@ CYAN = f"{ESC}[01;36m"
 YELLOW = f"{ESC}[01;33m"
 UNDERLINE = f"{ESC}[4m"
 DIM = f"{ESC}[2m"
+GRAY = f"{ESC}[90m"
 MAGENTA = f"{ESC}[35m"
 START = f"\r{ESC}[?2004h{ESC}[?25h"
 RESTORE = f"{RESET}{ESC}[?2004l{ESC}[?25h"
@@ -145,6 +146,8 @@ class Terminal:
         if entry.kind == "private":
             return [(MAGENTA, "[privado] "), (GREEN, entry.sender),
                     ("", " -> "), (GREEN, entry.recipient), ("", ": " + entry.text)]
+        if entry.kind == "join":
+            return [(GRAY, entry.text)]
         return [(DIM if entry.kind == "notice" else "", entry.text)]
 
     def output(self, entries: Iterable[Entry], editor: Editor):

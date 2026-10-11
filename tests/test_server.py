@@ -193,7 +193,7 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn(b"Welcome to ", client.data)
         client.send("ana\r")
         client.until("Conectado como ana")
-        self.assertIn("chat@ubuntu's apodo: ana", "\n".join(client.screen.display))
+        self.assertIn("chat@ubuntu's apodo: ana", client.display_text())
         self.assertEqual(client.data.count(b"Welcome to "), 1)
         self.assertEqual(client.data.count(b"Si te pilla el profe"), 1)
         client.send("history\r")
@@ -210,6 +210,32 @@ class ServerTests(unittest.TestCase):
         other.send("jose\u0301\r")
         other.until("Conectado como josé")
         ana.until("josé se ha unido.")
+
+    def test_login_timeout_closes_connection_and_releases_slot(self):
+        client = Client(self.server.port)
+        self.clients.append(client)
+        client.send("mal apodo\r")
+        client.until("Apodo inválido")
+        with self.server.lock:
+            session, thread = next(iter(self.server.sessions.items()))
+        session.clock = lambda: session.login_deadline
+        client.until("Tiempo de espera agotado")
+        thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(client.socket.recv(4096), b"")
+        self.assertEqual(self.server.room.names(), [])
+        self.assertEqual(self.server.sessions, {})
+
+    def test_accepted_nick_disables_login_timeout(self):
+        ana = self.client("ana")
+        with self.server.room.lock:
+            session = self.server.room.users["ana"]
+        session.clock = lambda: session.login_deadline + 1
+        ana.send("sigo conectado\r")
+        ana.until("sigo conectado")
+        self.assertFalse(session.stopping.is_set())
+        self.assertIn("Los apodos no verifican", ana.display_text())
+        self.assertIn("Tu terminal puede conservarlo", ana.display_text())
 
     def test_help_is_grouped_and_has_no_removed_shortcuts(self):
         ana = self.client("ana")
