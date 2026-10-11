@@ -17,6 +17,7 @@ import unittest
 import pyte
 
 from chat_terminal.server import ChatServer
+from terminal_emulator import AlternateScreen
 
 
 class BridgeTests(unittest.TestCase):
@@ -35,7 +36,13 @@ class BridgeTests(unittest.TestCase):
     def test_raw_terminal_restoration_on_server_disconnect(self):
         self.check_terminal_restoration(disconnect=True)
 
-    def check_terminal_restoration(self, disconnect):
+    def test_manual_restoration_on_signal(self):
+        self.check_terminal_restoration(disconnect=False, manual=True)
+
+    def test_manual_restoration_on_server_disconnect(self):
+        self.check_terminal_restoration(disconnect=True, manual=True)
+
+    def check_terminal_restoration(self, disconnect, manual=False):
         server = ChatServer(0, "ubuntu", color=False)
         thread = threading.Thread(target=server.serve)
         thread.start()
@@ -48,7 +55,7 @@ class BridgeTests(unittest.TestCase):
             stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
             env={**os.environ, "SSH_CONNECTION": "192.168.1.100 54321 192.168.1.166 22"},
         )
-        screen = pyte.Screen(40, 12)
+        screen = AlternateScreen(40, 12)
         stream = pyte.ByteStream(screen)
         received = bytearray()
 
@@ -79,6 +86,10 @@ class BridgeTests(unittest.TestCase):
             # NAWS travels from the bridge to the server and redraws the draft.
             os.write(master, b"\x1b[D!\r")
             until("hola á!中")
+            if manual:
+                os.write(master, b"man chat\r")
+                until("CHAT(1)")
+                self.assertIs(screen.screen, screen.alternate)
             if disconnect:
                 server.stop()
             else:
@@ -87,9 +98,14 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(process.returncode, 0)
             self.assertEqual(termios.tcgetattr(slave), original)
             while select.select([master], [], [], 0)[0]:
-                received.extend(os.read(master, 65536))
+                data = os.read(master, 65536)
+                received.extend(data)
+                stream.feed(data)
             self.assertIn(b"\x1b[?2004h", received)
             self.assertIn(b"\x1b[?2004l", received)
+            if manual:
+                self.assertIn(b"\x1b[?1049h", received)
+                self.assertIs(screen.screen, screen.main)
         finally:
             if process.poll() is None:
                 process.terminate()

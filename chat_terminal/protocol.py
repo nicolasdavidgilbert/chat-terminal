@@ -2,6 +2,7 @@
 
 import codecs
 import ipaddress
+import time
 from dataclasses import dataclass
 
 IAC, DONT, DO, WONT, WILL, SB, SE = 255, 254, 253, 252, 251, 250, 240
@@ -31,6 +32,7 @@ SEQUENCES = {
     "OA": "up", "OB": "down", "OC": "right", "OD": "left",
     "[1~": "home", "[7~": "home", "[4~": "end", "[8~": "end",
     "[3~": "delete", "[1;5C": "word_right", "[1;5D": "word_left",
+    "[5~": "page_up", "[6~": "page_down",
 }
 
 
@@ -48,6 +50,8 @@ class Protocol:
         self.pasting = False
         self.paste = bytearray()
         self.paste_truncated = False
+        self.escape_time = 0.0
+        self.clock = time.monotonic
 
     def reset(self):
         """Libera también datos de un pegado interrumpido al cerrar la sesión."""
@@ -106,6 +110,13 @@ class Protocol:
                     self.telnet_state = "sub"
         return events
 
+    def expire_escape(self) -> list[Event]:
+        if (self.state == "escape" and not self.sequence and not self.pasting
+                and self.clock() - self.escape_time >= 0.1):
+            self.state = "data"
+            return [Event("key", "escape")]
+        return []
+
     def _key(self, byte: int, events: list[Event]):
         if self.state == "osc":
             if byte == 7:
@@ -158,6 +169,7 @@ class Protocol:
         if byte == 27:
             self.last_cr = False
             self.state = "escape"
+            self.escape_time = self.clock()
             self.sequence = ""
             self.decoder.reset()
             return

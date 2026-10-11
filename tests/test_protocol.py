@@ -4,6 +4,25 @@ from chat_terminal.protocol import Event, IAC, NAWS, Protocol, SB, SE, SSH_ADDRE
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_standalone_escape_and_split_navigation(self):
+        parser = Protocol()
+        now = [0.0]
+        parser.clock = lambda: now[0]
+        self.assertEqual(parser.feed(b"\x1b"), [])
+        now[0] = 0.099
+        self.assertEqual(parser.expire_escape(), [])
+        now[0] = 0.1
+        self.assertEqual(parser.expire_escape(), [Event("key", "escape")])
+        self.assertEqual(parser.expire_escape(), [])
+        parser.feed(b"\x1b[")
+        now[0] += 1
+        self.assertEqual(parser.expire_escape(), [])
+        self.assertEqual(parser.feed(b"6~"), [Event("key", "page_down")])
+        self.assertEqual(parser.feed(b"\x1b[5~"), [Event("key", "page_up")])
+        parser.feed(b"\x1b[200~\x1b")
+        now[0] += 1
+        self.assertEqual(parser.expire_escape(), [])
+        self.assertEqual(parser.feed(b"[201~"), [Event("paste", "")])
     def test_ssh_address_metadata_handles_split_ipv4_ipv6_and_invalid_input(self):
         for address in ("192.168.1.166", "2001:db8::1"):
             parser = Protocol()

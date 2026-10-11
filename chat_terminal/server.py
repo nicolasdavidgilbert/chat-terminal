@@ -245,8 +245,8 @@ class Session:
               or (command == "man" and len(parts) == 2
                   and parts[1].casefold() == "chat")):
             self.enqueue(Entry(text, self.nick, kind="message"))
-            for entry in HELP:
-                self.enqueue(entry)
+            self.flush()
+            self.terminal.open_manual(HELP)
         elif command in ("/lista", "/who", "ls", "who") and len(parts) == 1:
             self.enqueue(Entry(text, self.nick, kind="message"))
             self.enqueue(Entry("", kind="users", names=tuple(self.room.names())))
@@ -285,6 +285,10 @@ class Session:
     def event(self, event: Event) -> bool:
         if self.login_expired():
             return False
+        if self.terminal.manual is not None and event.kind in ("text", "paste", "key"):
+            if event.kind != "paste":
+                self.terminal.manual_key(event.value)
+            return True
         if event.kind == "ssh_address":
             if not self.nick:
                 self.terminal.login_host = event.value
@@ -364,6 +368,9 @@ class Session:
                 if self.login_expired():
                     break
                 self.flush()
+                for event in self.protocol.expire_escape():
+                    if not self.event(event):
+                        return
                 readable, _, _ = select.select([self.conn], [], [], 0.05)
                 if not readable:
                     continue

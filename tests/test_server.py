@@ -5,6 +5,7 @@ import time
 import unittest
 
 import pyte
+from terminal_emulator import AlternateScreen
 
 from chat_terminal.protocol import TelnetFilter
 from chat_terminal.protocol import Event
@@ -14,7 +15,7 @@ from chat_terminal.server import ChatServer, Room, Session
 class Client:
     def __init__(self, port):
         self.socket = socket.create_connection(("127.0.0.1", port), timeout=2)
-        self.screen = pyte.HistoryScreen(80, 24, history=1000)
+        self.screen = AlternateScreen(80, 24, history=1000)
         self.stream = pyte.ByteStream(self.screen)
         self.filter = TelnetFilter()
         self.data = bytearray()
@@ -277,8 +278,11 @@ class ServerTests(unittest.TestCase):
     def test_help_is_grouped_and_has_no_removed_shortcuts(self):
         ana = self.client("ana")
         ana.send("/help\r")
-        ana.until("Tu historial se borra al salir.")
+        ana.until("CHAT(1)")
         visible = ana.display_text()
+        ana.send("\x1b[6~")
+        ana.until("Tu historial se borra al salir.")
+        visible += ana.display_text()
         for heading in ("CHAT(1)", "NOMBRE", "USO", "COMANDOS", "TECLAS"):
             self.assertIn(heading, visible)
         self.assertIn("/msg y @apodo", visible)
@@ -288,8 +292,41 @@ class ServerTests(unittest.TestCase):
     def test_man_chat_alias(self):
         ana = self.client("ana")
         ana.send("man chat\r")
-        ana.until("Tu historial se borra al salir.")
+        ana.until("CHAT(1)")
         self.assertIn("CHAT(1)", ana.display_text())
+
+    def test_manual_aliases_exit_without_polluting_chat(self):
+        ana = self.client("ana")
+        for command, exit_key in (("man chat", "q"), ("/help", "\x1b"),
+                                  ("/ayuda", "\x03"), ("help", "q")):
+            with self.subTest(command=command):
+                ana.send(command + "\r")
+                ana.until("CHAT(1)")
+                ana.send(exit_key)
+                ana.until("ana@ubuntu:~$")
+                self.assertNotIn("CHAT(1)", ana.display_text())
+                self.assertNotIn("RePág/AvPág", ana.display_text())
+                with self.server.room.lock:
+                    session = self.server.room.users["ana"]
+                    self.assertIsNone(session.terminal.manual)
+                    self.assertFalse(any("CHAT(1)" in e.text for e in session.terminal.entries))
+                    self.assertEqual(session.editor.line, "")
+
+    def test_messages_during_manual_reach_normal_scrollback(self):
+        ana = self.client("ana")
+        bea = self.client("bea")
+        ana.send("/help\r")
+        ana.until("CHAT(1)")
+        ana.send("\x1b[200~q\x03hola\x1b[201~")
+        bea.send("publico durante manual\r/msg ana privado durante manual\r")
+        ana.read(0.2)
+        self.assertIn("CHAT(1)", ana.display_text())
+        ana.send("q")
+        ana.until("privado durante manual")
+        self.assertIn("publico durante manual", ana.display_text())
+        self.assertNotIn("CHAT(1)", ana.display_text())
+        with self.server.room.lock:
+            self.assertEqual(self.server.room.users["ana"].editor.line, "")
 
     def test_burst_is_limited_and_warning_is_private(self):
         ana = self.client("ana")

@@ -23,7 +23,9 @@ GRAY = f"{ESC}[90m"
 MENTION = f"{ESC}[38;2;127;175;175m"
 MAGENTA = f"{ESC}[35m"
 START = f"\r{ESC}[?2004h{ESC}[?25h"
-RESTORE = f"{RESET}{ESC}[?2004l{ESC}[?25h"
+ALT_ENTER = f"{ESC}[?1049h"
+ALT_EXIT = f"{ESC}[?1049l"
+RESTORE = f"{ESC}[?2026l{ALT_EXIT}{RESET}{ESC}[?2004l{ESC}[?25h"
 Span = tuple[str, str]
 
 
@@ -83,6 +85,67 @@ class Terminal:
         self.cursor_row = 0
         self.drawn = False
         self.entries: deque[Entry] = deque(maxlen=300)
+        self.manual: tuple[Entry, ...] | None = None
+        self.manual_offset = 0
+
+    def _manual_screen(self) -> str:
+        rows = []
+        for entry in self.manual or ():
+            rows.extend(layout(self.spans(entry), self.width, color=self.color)[0])
+        page = self.height - 1
+        self.manual_offset = max(0, min(self.manual_offset, max(0, len(rows) - page)))
+        visible = rows[self.manual_offset:self.manual_offset + page]
+        buf = [f"{ESC}[?25l{ESC}[2J{ESC}[H"]
+        for index, row in enumerate(visible, 1):
+            buf.append(f"{ESC}[{index};1H" + row + RESET)
+        footer = "↑/↓ mover · RePág/AvPág página · q/Esc/Ctrl+C salir"
+        # Keep the footer on a single row, including narrow terminals.
+        footer_row = layout([("", footer)], self.width, color=self.color)[0][0]
+        buf.append(f"{ESC}[{self.height};1H" + footer_row + RESET)
+        return "".join(buf)
+
+    def open_manual(self, entries: tuple[Entry, ...]):
+        self.manual = entries
+        self.manual_offset = 0
+        self.send(ALT_ENTER + self._manual_screen())
+
+    def close_manual(self):
+        if self.manual is not None:
+            self.manual = None
+            self.manual_offset = 0
+            self.send(ALT_EXIT + f"{ESC}[?25h")
+
+    def manual_key(self, key: str):
+        page = self.height - 1
+        if key in ("q", "escape", "cancel"):
+            self.close_manual()
+            return
+        movement = {"up": -1, "down": 1, "page_up": -page,
+                    "page_down": page, " ": page, "enter": 1}
+        if key == "home":
+            self.manual_offset = 0
+        elif key == "end":
+            self.manual_offset = 10**9
+        elif key in movement:
+            self.manual_offset += movement[key]
+        else:
+            return
+        self.send(self._manual_screen())
+
+    def _update_main(self, operation):
+        """Update normal scrollback, then repaint the separate manual atomically."""
+        manual = self.manual
+        original_send = self.send
+        parts = []
+        self.manual = None
+        self.send = parts.append
+        try:
+            operation()
+        finally:
+            self.send = original_send
+            self.manual = manual
+        original_send(f"{ESC}[?2026h" + ALT_EXIT + "".join(parts)
+                      + ALT_ENTER + self._manual_screen() + f"{ESC}[?2026l")
 
     def prefix(self) -> list[Span]:
         return (prompt(self.nick, self.hostname) if self.nick
@@ -119,6 +182,8 @@ class Terminal:
                 + "\r" + (f"{ESC}[{column}C" if column else ""))
 
     def redraw(self, editor: Editor):
+        if self.manual is not None:
+            return
         self.send(f"{ESC}[?25l" + self._erase() + self._input(editor) + f"{ESC}[?25h")
 
     def message_spans(self, text: str) -> list[Span]:
@@ -172,6 +237,9 @@ class Terminal:
         return [(DIM if entry.kind == "notice" else "", entry.text)]
 
     def output(self, entries: Iterable[Entry], editor: Editor):
+        if self.manual is not None:
+            self._update_main(lambda: self.output(entries, editor))
+            return
         buf = [f"{ESC}[?25l", self._erase()]
         for entry in entries:
             self.entries.append(entry)
@@ -188,6 +256,9 @@ class Terminal:
         self.send(f"{ESC}[2J{ESC}[H" + self._input(editor))
 
     def resize(self, width: int, height: int, editor: Editor):
+        if self.manual is not None:
+            self._update_main(lambda: self.resize(width, height, editor))
+            return
         width, height = max(1, min(width, 1000)), max(2, min(height, 500))
         if (width, height) == (self.width, self.height):
             return
@@ -222,6 +293,8 @@ class Terminal:
         self.send("".join(buf))
 
     def dispose(self):
+        self.manual = None
+        self.manual_offset = 0
         self.entries.clear()
         self.nick = ""
         self.login_host = self.hostname
@@ -245,4 +318,5 @@ class Terminal:
         self.output([Entry(editor.line, self.nick, kind="message"), *entries], editor)
 
     def finish(self, editor: Editor, text: str = "logout"):
+        self.close_manual()
         self.send(self._erase() + RESTORE + text + "\r\n")

@@ -140,9 +140,15 @@ En `ls`, `/lista` y `who`, los demás apodos aparecen en azul intenso y el tuyo
 en cian intenso (`01;36`), distinguible del verde del prompt. `--no-color` también desactiva
 los colores de la lista y los del manual.
 
-`man chat` muestra la misma ayuda que `/help`, con secciones de manual,
+`man chat`, `/ayuda`, `/help` y `help` abren la misma ayuda a pantalla completa,
+en la pantalla alternativa del terminal, con secciones de manual,
 cabeceras en amarillo intenso, comandos en negrita y argumentos en cian
 subrayado. Tab también completa `man` y el nombre `chat`.
+Usa ↑/↓ para recorrer líneas, RePág/AvPág o espacio para avanzar por páginas,
+e Inicio/Fin para ir a los extremos. `q`, Esc y Ctrl+C cierran solo el manual.
+Al volver, el chat conserva los mensajes recibidos y su scroll habitual;
+la ayuda no se añade a la conversación ni al scroll principal.
+El visor requiere soporte de pantalla alternativa en el terminal.
 
 Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.

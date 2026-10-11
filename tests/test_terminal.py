@@ -5,9 +5,58 @@ from wcwidth import wcswidth
 
 from chat_terminal.editor import Editor
 from chat_terminal.terminal import BLUE, Entry, GREEN, Terminal, layout
+from terminal_emulator import AlternateScreen
 
 
 class TerminalTests(unittest.TestCase):
+    def test_manual_screen_restores_chat_and_preserves_scrollback(self):
+        screen = AlternateScreen(40, 12)
+        terminal = Terminal(pyte.Stream(screen).feed, "ubuntu")
+        terminal.width, terminal.height = 40, 12
+        terminal.nick = "ana"
+        editor = Editor()
+        editor.insert("borrador")
+        terminal.output([Entry("mensaje anterior")], editor)
+        manual = tuple(Entry(f"ayuda linea {i}") for i in range(50))
+        terminal.open_manual(manual)
+        self.assertIn("ayuda linea 0", "\n".join(screen.display))
+        terminal.manual_key("end")
+        self.assertIn("ayuda linea 49", "\n".join(screen.display))
+        terminal.manual_key("page_up")
+        self.assertLess(terminal.manual_offset, 39)
+        terminal.manual_key("home")
+        self.assertEqual(terminal.manual_offset, 0)
+        for i in range(30):
+            terminal.output([Entry(f"entrante {i}")], editor)
+        self.assertIs(screen.screen, screen.alternate)
+        self.assertIn("ayuda linea 0", "\n".join(screen.display))
+        terminal.close_manual()
+        self.assertIs(screen.screen, screen.main)
+        self.assertIn("entrante 29", "\n".join(screen.display))
+        self.assertIn("borrador", "\n".join(screen.display))
+        history = "".join(cell.data for row in screen.history.top for cell in row.values())
+        self.assertIn("mensaje anterior", history)
+        self.assertNotIn("ayuda linea", history + "\n".join(screen.display))
+        self.assertFalse(any(e in manual for e in terminal.entries))
+        self.assertEqual(editor.line, "borrador")
+        terminal.open_manual(manual)
+        self.assertEqual(terminal.manual_offset, 0)
+
+    def test_manual_resize_tiny_terminal_and_no_color(self):
+        sent = []
+        terminal = Terminal(sent.append, "ubuntu", color=False)
+        terminal.nick = "ana"
+        editor = Editor()
+        terminal.open_manual(tuple(Entry("contenido " * 10, kind="heading") for _ in range(5)))
+        terminal.manual_key("end")
+        for width, height in ((8, 3), (1, 2), (80, 24)):
+            terminal.resize(width, height, editor)
+            self.assertIsNotNone(terminal.manual)
+            self.assertNotIn("\x1b[01;33m", sent[-1])
+            self.assertIn(f"\x1b[{height};1H", sent[-1])
+        terminal.manual_key("cancel")
+        self.assertIsNone(terminal.manual)
+
     def setUp(self):
         self.screen = pyte.HistoryScreen(40, 12, history=1000)
         self.stream = pyte.Stream(self.screen)
