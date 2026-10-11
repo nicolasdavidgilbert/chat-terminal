@@ -12,7 +12,7 @@ import time
 
 from .editor import Editor, safe_text
 from .names import normalize_nick
-from .protocol import Event, MAX_INPUT, NEGOTIATION, Protocol
+from .protocol import CLOSE_COMPLETE, Event, MAX_INPUT, NEGOTIATION, Protocol
 from .terminal import Entry, Terminal
 
 def system_welcome() -> str:
@@ -67,6 +67,13 @@ def system_information(address: str) -> tuple[Entry, ...]:
 
 MAX_NICK = 12
 LOGIN_TIMEOUT = 60.0
+CLOSE_MESSAGES = {
+    "voluntary": "Has salido del chat.",
+    "cancelled": "Conexión cancelada.",
+    "login_timeout": "Tiempo de espera agotado para elegir apodo.",
+    "server_shutdown": "El servidor ha cerrado el chat.",
+    "slow_client": "Conexión cerrada: no se pudo entregar la salida a tiempo.",
+}
 HELP = (
     Entry("CHAT(1)                 Manual del chat                 CHAT(1)", kind="notice"),
     Entry(""),
@@ -159,6 +166,8 @@ class Session:
         self.message_tokens = 5.0
         self.token_time = self.clock()
         self.last_rate_notice = float("-inf")
+        self.input_limit_notified = False
+        self.close_reason = None
 
     def allow_message(self) -> bool:
         now = self.clock()
@@ -189,10 +198,14 @@ class Session:
         # Never block another client's thread while delivering a message.
         self.stop()
 
-    def stop(self):
-        self.stopping.set()
+    def stop(self, reason: str = "slow_client"):
+        with self.state_lock:
+            if self.close_reason is None:
+                self.close_reason = reason
+            self.stopping.set()
         try:
-            self.conn.shutdown(socket.SHUT_RDWR)
+            # Wake recv while keeping a final, timeout-bounded write possible.
+            self.conn.shutdown(socket.SHUT_RD)
         except OSError:
             pass
 
@@ -235,6 +248,7 @@ class Session:
         parts = text.split(None, 2)
         command = parts[0].casefold() if parts else ""
         if command in ("/salir", "/quit", "/exit", "exit", "logout") and len(parts) == 1:
+            self.close_reason = "voluntary"
             self.terminal.output(
                 [Entry(text, self.nick, kind="message")], self.editor
             )
@@ -295,22 +309,27 @@ class Session:
                 if self.terminal.drawn:
                     self.terminal.redraw(self.editor)
         elif event.kind in ("text", "paste"):
-            truncated = event.kind == "paste" and (
-                event.truncated or
+            overflow = (
                 len(safe_text(event.value).encode("utf-8")) >
                 MAX_INPUT - len(self.editor.line.encode("utf-8"))
             )
             if not self.editor.insert(event.value):
                 self.send("\a")
-            if truncated:
+            if event.kind == "paste" and (event.truncated or overflow):
                 self.enqueue(Entry(
                     "[aviso privado] El texto pegado supera el límite y se ha recortado."
+                ))
+            elif event.kind == "text" and overflow and not self.input_limit_notified:
+                self.input_limit_notified = True
+                self.enqueue(Entry(
+                    "[aviso privado] Has alcanzado el límite de texto de esta línea."
                 ))
         elif event.kind == "reply":
             self.conn.sendall(event.value)
         elif event.kind == "resize":
             self.terminal.resize(*event.value, self.editor)
         elif event.kind == "key":
+            previous_length = len(self.editor.line.encode("utf-8"))
             if event.value == "tab":
                 if not self.nick:
                     self.send("\a")
@@ -318,12 +337,17 @@ class Session:
                 result = self.editor.complete(self.room.names())
             else:
                 result = self.editor.key(event.value)
+            if (len(self.editor.line.encode("utf-8")) < previous_length
+                    or result.action in ("submit", "cancel")):
+                self.input_limit_notified = False
             if result.action == "submit":
                 return self.line(result.text)
             if result.action == "exit":
+                self.close_reason = "voluntary" if self.nick else "cancelled"
                 return False
             if result.action == "cancel":
                 if not self.nick:
+                    self.close_reason = "cancelled"
                     return False
                 self.enqueue(Entry(result.text + "^C", self.nick, kind="message"))
             elif result.action == "clear":
@@ -337,10 +361,7 @@ class Session:
     def login_expired(self) -> bool:
         if self.nick or self.clock() < self.login_deadline:
             return False
-        self.terminal.output([
-            Entry("Tiempo de espera agotado: 60 segundos para elegir apodo."),
-            Entry("Conexión cerrada."),
-        ], self.editor)
+        self.close_reason = "login_timeout"
         return True
 
     def run(self):
@@ -386,6 +407,9 @@ class Session:
                         self.flush()
                 self.flush()
                 self.terminal.redraw(self.editor)
+        except socket.timeout:
+            if self.close_reason is None:
+                self.close_reason = "slow_client"
         except OSError:
             # Connection failures contain no application log or user data.
             pass
@@ -396,7 +420,9 @@ class Session:
                 self.room.remove(self)
                 self.room.broadcast(Entry(f"{self.nick} ha salido.", kind="notice"))
             try:
-                self.terminal.finish(self.editor)
+                self.terminal.finish(self.editor, CLOSE_MESSAGES.get(self.close_reason, ""))
+                if self.close_reason in CLOSE_MESSAGES:
+                    self.conn.sendall(CLOSE_COMPLETE)
             except OSError:
                 pass
             self.conn.close()
@@ -412,6 +438,7 @@ class Session:
             self.message_tokens = 0.0
             self.token_time = 0.0
             self.last_rate_notice = float("-inf")
+            self.input_limit_notified = False
 
 
 class ChatServer:
@@ -457,6 +484,7 @@ class ChatServer:
                     try:
                         conn.settimeout(0.2)
                         conn.sendall(b"Chat lleno. Intentalo de nuevo mas tarde.\r\n")
+                        conn.sendall(CLOSE_COMPLETE)
                     except OSError:
                         pass
                     finally:
@@ -474,7 +502,7 @@ class ChatServer:
             with self.lock:
                 sessions = list(self.sessions.items())
             for session, _ in sessions:
-                session.stop()
+                session.stop("server_shutdown")
             for _, thread in sessions:
                 thread.join()
 

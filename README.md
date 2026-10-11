@@ -149,6 +149,8 @@ e Inicio/Fin para ir a los extremos. `q`, Esc y Ctrl+C cierran solo el manual.
 Al volver, el chat conserva los mensajes recibidos y su scroll habitual;
 la ayuda no se añade a la conversación ni al scroll principal.
 El visor requiere soporte de pantalla alternativa en el terminal.
+El pie muestra el intervalo de líneas visibles y el total; en pantallas estrechas
+se abrevia y se da prioridad a recordar cómo salir.
 
 Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.
@@ -166,8 +168,18 @@ de pegado protegido tratará los saltos de línea como Enter.
 Si un pegado protegido supera los 400 bytes UTF-8 disponibles en la línea,
 se recorta y solo quien lo ha pegado recibe un aviso privado. El texto sigue
 en el borrador hasta pulsar Enter.
+Al superar el límite escribiendo, solo tú recibes un aviso, que no se repite
+al mantener una tecla pulsada. Borrar texto, enviar o cancelar la línea permite
+que vuelva a avisar si alcanzas otra vez el límite.
 
 ## Sesiones y privacidad
+
+Al salir voluntariamente aparece `Has salido del chat.`. El timeout del apodo,
+la cancelación de entrada y el cierre del servidor tienen avisos específicos.
+El puente muestra `Se ha perdido la conexión con el chat.` si el servidor
+desaparece o falla la conexión sin confirmar un cierre. La entrega del aviso
+final es de mejor esfuerzo cuando la conexión ya está rota o saturada.
+Los errores del transporte SSH externo los informa el propio cliente SSH.
 
 Los apodos se registran y muestran en minúsculas, conservando las tildes y la ñ:
 `JOSÉ` y `José` se convierten en `josé`, y `Peña` en `peña`.

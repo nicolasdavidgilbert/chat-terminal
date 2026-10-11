@@ -163,11 +163,67 @@ class ServerTests(unittest.TestCase):
                     ana.read(0.05)
                 bea.read(0.05)
                 self.assertNotIn(b"El texto pegado", bea.data)
+                self.assertNotIn(b"Has alcanzado", ana.data)
                 self.assertNotIn(b"x" * 20, bea.data)
                 with self.server.room.lock:
                     session = self.server.room.users["ana"]
                     self.assertEqual(len(session.editor.line.encode()), 400)
                     self.assertEqual(session.editor.history, [])
+
+    def test_typing_limit_notice_is_private_once_until_deleting_or_cancelling(self):
+        ana = self.client("ana")
+        bea = self.client("bea")
+        warning = "Has alcanzado el límite"
+        ana.send("á" * 200 + "xxxxx")
+        ana.until(warning)
+        ana.read(0.1)
+        self.assertEqual(ana.data.count(warning.encode()), 1)
+        bea.read(0.1)
+        self.assertNotIn(warning.encode(), bea.data)
+        with self.server.room.lock:
+            self.assertEqual(self.server.room.users["ana"].editor.line, "á" * 200)
+        ana.send("\x7fáx")
+        ana.read(0.2)
+        self.assertEqual(ana.data.count(warning.encode()), 2)
+        ana.send("\x03" + "x" * 401)
+        ana.read(0.2)
+        self.assertEqual(ana.data.count(warning.encode()), 3)
+        ana.send("\r" + "x" * 401)
+        ana.read(0.2)
+        self.assertEqual(ana.data.count(warning.encode()), 4)
+
+    def test_voluntary_exit_has_one_message_and_complete_marker(self):
+        for key in ("exit\r", "\x04"):
+            client = self.client("ana")
+            client.send(key)
+            client.until("Has salido del chat.")
+            client.read(0.1)
+            self.assertEqual(client.data.count(b"Has salido del chat."), 1)
+            self.assertTrue(client.filter.close_complete)
+
+    def test_shutdown_informs_client_and_marks_completed_close(self):
+        ana = self.client("ana")
+        self.server.stop()
+        ana.until("El servidor ha cerrado el chat.")
+        ana.read(0.1)
+        self.assertTrue(ana.filter.close_complete)
+
+    def test_cancelled_login_has_its_own_close_message(self):
+        client = Client(self.server.port)
+        self.clients.append(client)
+        client.send("\x03")
+        client.until("Conexión cancelada.")
+        client.read(0.1)
+        self.assertTrue(client.filter.close_complete)
+
+    def test_saturated_session_sends_best_effort_reason(self):
+        ana = self.client("ana")
+        with self.server.room.lock:
+            session = self.server.room.users["ana"]
+        session.stop("slow_client")
+        ana.until("no se pudo entregar la salida a tiempo.")
+        ana.read(0.1)
+        self.assertTrue(ana.filter.close_complete)
 
     def test_slow_client_queue_is_bounded_and_cleared(self):
         local, remote = socket.socketpair()
@@ -263,6 +319,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(client.socket.recv(4096), b"")
         self.assertEqual(self.server.room.names(), [])
         self.assertEqual(self.server.sessions, {})
+        self.assertTrue(client.filter.close_complete)
 
     def test_accepted_nick_disables_login_timeout(self):
         ana = self.client("ana")
@@ -341,6 +398,16 @@ class ServerTests(unittest.TestCase):
 
 
 class RateLimitTests(unittest.TestCase):
+    def test_partially_rejected_unicode_input_and_filtered_controls(self):
+        self.ana.editor.insert("x" * 399)
+        self.ana.terminal.send = lambda data: None
+        self.ana.event(Event("text", "á"))
+        self.assertEqual(self.ana.editor.line, "x" * 399)
+        self.assertIn("Has alcanzado", self.entries(self.ana)[0].text)
+        self.ana.input_limit_notified = False
+        self.ana.event(Event("text", "\x00"))
+        self.assertEqual(self.entries(self.ana), [])
+
     def setUp(self):
         self.room = Room()
         self.sockets = []

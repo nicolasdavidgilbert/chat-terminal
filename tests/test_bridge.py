@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import socket
 import signal
 import struct
 import subprocess
@@ -17,10 +18,59 @@ import unittest
 import pyte
 
 from chat_terminal.server import ChatServer
+from chat_terminal.protocol import CLOSE_COMPLETE
 from terminal_emulator import AlternateScreen
 
 
 class BridgeTests(unittest.TestCase):
+    def test_bridge_reports_unexpected_eof_and_socket_error_but_not_known_closes(self):
+        for message, reset in ((b"", False), (b"", True),
+                               (b"Has salido del chat.\r\n" + CLOSE_COMPLETE, False),
+                               (b"Chat lleno.\r\n" + CLOSE_COMPLETE, False)):
+            with self.subTest(message=message, reset=reset):
+                with socket.socket() as listener:
+                    listener.bind(("127.0.0.1", 0))
+                    listener.listen(1)
+                    listener.settimeout(3)
+                    master, slave = pty.openpty()
+                    original = termios.tcgetattr(slave)
+                    process = subprocess.Popen(
+                        [sys.executable, str(Path(__file__).resolve().parents[1] / "ssh-bridge.py"),
+                         "127.0.0.1", str(listener.getsockname()[1])],
+                        stdin=slave, stdout=slave, stderr=slave,
+                    )
+                    try:
+                        conn, _ = listener.accept()
+                        with conn:
+                            conn.settimeout(2)
+                            conn.recv(4096)  # Drain the bridge's initial negotiation.
+                            if message:
+                                for byte in message:
+                                    conn.sendall(bytes((byte,)))
+                                conn.shutdown(socket.SHUT_WR)
+                                # Drain remaining input so this closes cleanly, not by RST.
+                                while conn.recv(4096):
+                                    pass
+                            elif reset:
+                                conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                                struct.pack("ii", 1, 0))
+                            else:
+                                conn.shutdown(socket.SHUT_WR)
+                                while conn.recv(4096):
+                                    pass
+                        process.wait(timeout=3)
+                        received = bytearray()
+                        while select.select([master], [], [], 0)[0]:
+                            received.extend(os.read(master, 65536))
+                        warning = "Se ha perdido la conexión con el chat.".encode()
+                        self.assertEqual(received.count(warning), 0 if message else 1)
+                        self.assertEqual(termios.tcgetattr(slave), original)
+                    finally:
+                        if process.poll() is None:
+                            process.terminate()
+                            process.wait(timeout=3)
+                        os.close(master)
+                        os.close(slave)
     def test_requires_terminal_before_connecting(self):
         result = subprocess.run(
             [sys.executable, str(Path(__file__).resolve().parents[1] / "ssh-bridge.py")],
@@ -103,6 +153,9 @@ class BridgeTests(unittest.TestCase):
                 stream.feed(data)
             self.assertIn(b"\x1b[?2004h", received)
             self.assertIn(b"\x1b[?2004l", received)
+            self.assertNotIn("Se ha perdido la conexión".encode(), received)
+            if disconnect:
+                self.assertEqual(received.count("El servidor ha cerrado el chat.".encode()), 1)
             if manual:
                 self.assertIn(b"\x1b[?1049h", received)
                 self.assertIs(screen.screen, screen.main)

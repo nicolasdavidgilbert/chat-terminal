@@ -9,6 +9,23 @@ from terminal_emulator import AlternateScreen
 
 
 class TerminalTests(unittest.TestCase):
+    def test_manual_position_tracks_navigation_resize_and_narrow_footer(self):
+        screen = AlternateScreen(100, 10)
+        terminal = Terminal(pyte.Stream(screen).feed, "ubuntu")
+        terminal.width, terminal.height = 100, 10
+        editor = Editor()
+        terminal.open_manual(tuple(Entry(f"linea {i}") for i in range(30)))
+        self.assertIn("líneas 1–9 de 30", screen.display[-1])
+        terminal.manual_key("end")
+        self.assertIn("líneas 22–30 de 30", screen.display[-1])
+        screen.resize(lines=5, columns=30)
+        terminal.resize(30, 5, editor)
+        self.assertIn("22–25/30 · q salir", screen.display[-1])
+        screen.resize(lines=2, columns=3)
+        terminal.resize(3, 2, editor)
+        self.assertEqual(screen.display[-1], "q s")
+        self.assertLess(screen.cursor.y, 2)
+
     def test_manual_screen_restores_chat_and_preserves_scrollback(self):
         screen = AlternateScreen(40, 12)
         terminal = Terminal(pyte.Stream(screen).feed, "ubuntu")

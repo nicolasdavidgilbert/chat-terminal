@@ -74,6 +74,8 @@ def main():
     old = None
     handlers = {}
     flags = {"resized": False, "stop": False}
+    filtro = TelnetFilter()
+    connection_lost = False
 
     def resize(*_):
         flags["resized"] = True
@@ -87,7 +89,6 @@ def main():
             handlers[sig] = signal.signal(sig, handler)
         old = termios.tcgetattr(stdin_fd)
         tty.setraw(stdin_fd)
-        filtro = TelnetFilter()
         send_ssh_address(sock)
         last_size = window_size()
         send_size(sock, last_size)
@@ -102,6 +103,7 @@ def main():
             if sock in readable:
                 data = sock.recv(4096)
                 if not data:
+                    connection_lost = not filtro.close_complete
                     break
                 write_all(stdout_fd, filtro.feed(data))
             if stdin_fd in readable:
@@ -109,11 +111,14 @@ def main():
                 if not keys:
                     break
                 sock.sendall(keys.replace(b"\xff", b"\xff\xff"))
-    except (OSError, termios.error, KeyboardInterrupt):
+    except OSError:
+        connection_lost = not filtro.close_complete and not flags["stop"]
+    except (termios.error, KeyboardInterrupt):
         pass
     finally:
         try:
-            write_all(stdout_fd, (RESTORE + "\r\n").encode())
+            message = "Se ha perdido la conexión con el chat.\r\n" if connection_lost else ""
+            write_all(stdout_fd, (RESTORE + "\r\n" + message).encode())
         except OSError:
             pass
         try:

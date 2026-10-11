@@ -9,6 +9,8 @@ IAC, DONT, DO, WONT, WILL, SB, SE = 255, 254, 253, 252, 251, 250, 240
 ECHO, SGA, NAWS, LINEMODE = 1, 3, 31, 34
 # Private bridge metadata: the server address of this particular SSH session.
 SSH_ADDRESS = 200
+CLOSE_STATUS = 201
+CLOSE_COMPLETE = bytes((IAC, SB, CLOSE_STATUS)) + b"complete" + bytes((IAC, SE))
 NEGOTIATION = bytes((IAC, WILL, ECHO, IAC, WILL, SGA,
                      IAC, DO, NAWS, IAC, DONT, LINEMODE))
 MAX_INPUT = 400
@@ -202,6 +204,9 @@ class TelnetFilter:
 
     def __init__(self):
         self.state = "data"
+        self.sub = bytearray()
+        self.sub_overflow = False
+        self.close_complete = False
 
     def feed(self, data: bytes) -> bytes:
         out = bytearray()
@@ -218,6 +223,8 @@ class TelnetFilter:
                 elif byte in (DO, DONT, WILL, WONT):
                     self.state = "option"
                 elif byte == SB:
+                    self.sub.clear()
+                    self.sub_overflow = False
                     self.state = "sub"
                 else:
                     self.state = "data"
@@ -226,6 +233,22 @@ class TelnetFilter:
             elif self.state == "sub":
                 if byte == IAC:
                     self.state = "sub_iac"
+                else:
+                    self._sub_byte(byte)
             elif self.state == "sub_iac":
-                self.state = "data" if byte == SE else "sub"
+                if byte == SE:
+                    if not self.sub_overflow and self.sub == bytes((CLOSE_STATUS,)) + b"complete":
+                        self.close_complete = True
+                    self.sub.clear()
+                    self.state = "data"
+                else:
+                    if byte == IAC:
+                        self._sub_byte(byte)
+                    self.state = "sub"
         return bytes(out)
+
+    def _sub_byte(self, byte: int):
+        if len(self.sub) < 64:
+            self.sub.append(byte)
+        else:
+            self.sub_overflow = True

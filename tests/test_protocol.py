@@ -1,9 +1,25 @@
 import unittest
 
-from chat_terminal.protocol import Event, IAC, NAWS, Protocol, SB, SE, SSH_ADDRESS, TelnetFilter
+from chat_terminal.protocol import CLOSE_COMPLETE, CLOSE_STATUS, Event, IAC, NAWS, Protocol, SB, SE, SSH_ADDRESS, TelnetFilter
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_close_marker_is_incremental_and_not_displayed(self):
+        parser = TelnetFilter()
+        output = b"".join(parser.feed(bytes((byte,))) for byte in b"salida\r\n" + CLOSE_COMPLETE)
+        self.assertEqual(output, b"salida\r\n")
+        self.assertTrue(parser.close_complete)
+
+    def test_unknown_or_oversized_close_markers_are_ignored(self):
+        for payload in (b"unknown", b"complete" + b"x" * 1000):
+            parser = TelnetFilter()
+            packet = bytes((IAC, SB, CLOSE_STATUS)) + payload + bytes((IAC, SE))
+            self.assertEqual(parser.feed(packet), b"")
+            self.assertFalse(parser.close_complete)
+            self.assertLessEqual(len(parser.sub), 64)
+        parser = TelnetFilter()
+        parser.feed(CLOSE_COMPLETE[:-1])
+        self.assertFalse(parser.close_complete)
     def test_standalone_escape_and_split_navigation(self):
         parser = Protocol()
         now = [0.0]

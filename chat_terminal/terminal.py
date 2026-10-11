@@ -98,9 +98,16 @@ class Terminal:
         buf = [f"{ESC}[?25l{ESC}[2J{ESC}[H"]
         for index, row in enumerate(visible, 1):
             buf.append(f"{ESC}[{index};1H" + row + RESET)
-        footer = "↑/↓ mover · RePág/AvPág página · q/Esc/Ctrl+C salir"
+        first = self.manual_offset + 1 if rows else 0
+        last = self.manual_offset + len(visible)
+        position = f"líneas {first}–{last} de {len(rows)}"
+        footer = position + " · ↑/↓ mover · RePág/AvPág página · q/Esc/Ctrl+C salir"
+        if wcswidth(footer) > self.width:
+            footer = f"{first}–{last}/{len(rows)} · q salir"
+        if wcswidth(footer) > self.width:
+            footer = "q salir"
         # Keep the footer on a single row, including narrow terminals.
-        footer_row = layout([("", footer)], self.width, color=self.color)[0][0]
+        footer_row = layout([(DIM, footer)], self.width, color=self.color)[0][0]
         buf.append(f"{ESC}[{self.height};1H" + footer_row + RESET)
         return "".join(buf)
 
@@ -319,4 +326,4 @@ class Terminal:
 
     def finish(self, editor: Editor, text: str = "logout"):
         self.close_manual()
-        self.send(self._erase() + RESTORE + text + "\r\n")
+        self.send(self._erase() + RESTORE + (text + "\r\n" if text else ""))
