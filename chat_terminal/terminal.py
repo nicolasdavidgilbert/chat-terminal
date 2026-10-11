@@ -19,6 +19,7 @@ YELLOW = f"{ESC}[01;33m"
 UNDERLINE = f"{ESC}[4m"
 DIM = f"{ESC}[2m"
 GRAY = f"{ESC}[90m"
+MENTION = f"{ESC}[38;2;127;175;175m"
 MAGENTA = f"{ESC}[35m"
 START = f"\r{ESC}[?2004h{ESC}[?25h"
 RESTORE = f"{RESET}{ESC}[?2004l{ESC}[?25h"
@@ -119,6 +120,17 @@ class Terminal:
     def redraw(self, editor: Editor):
         self.send(f"{ESC}[?25l" + self._erase() + self._input(editor) + f"{ESC}[?25h")
 
+    def message_spans(self, text: str) -> list[Span]:
+        spans = []
+        end = 0
+        for match in re.finditer(r"(?<![\w.@-])@([\w.-]+)", text):
+            if not self.nick or match[1].casefold() != self.nick.casefold():
+                continue
+            spans.extend((("", text[end:match.start()]), (MENTION, match[0])))
+            end = match.end()
+        spans.append(("", text[end:]))
+        return spans
+
     def spans(self, entry: Entry) -> list[Span]:
         if entry.kind == "users":
             spans = []
@@ -142,10 +154,10 @@ class Terminal:
             spans.extend((("", gap), ("", description)))
             return spans
         if entry.kind == "message":
-            return prompt(entry.sender, self.hostname) + [("", entry.text)]
+            return prompt(entry.sender, self.hostname) + self.message_spans(entry.text)
         if entry.kind == "private":
             return [(MAGENTA, "[privado] "), (GREEN, entry.sender),
-                    ("", " -> "), (GREEN, entry.recipient), ("", ": " + entry.text)]
+                    ("", " -> "), (GREEN, entry.recipient), ("", ": ")] + self.message_spans(entry.text)
         if entry.kind == "join":
             return [(GRAY, entry.text)]
         return [(DIM if entry.kind == "notice" else "", entry.text)]

@@ -142,6 +142,31 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(self.screen.buffer[0][0].fg, "default")
         self.assertEqual(self.screen.buffer[0][5].fg, "default")
 
+    def test_own_mentions_are_soft_cyan_in_public_and_private_messages(self):
+        for kind in ("message", "private"):
+            with self.subTest(kind=kind):
+                self.screen.reset()
+                self.terminal.drawn = False
+                self.terminal.output([
+                    Entry("hola @ANA, @bea", "bea", "ana", kind)
+                ], self.editor)
+                row = self.screen.display[0]
+                start = row.index("@ANA")
+                for index in range(start, start + 4):
+                    cell = self.screen.buffer[0][index]
+                    self.assertEqual(cell.fg, "7fafaf")
+                    self.assertFalse(cell.bold)
+                self.assertEqual(self.screen.buffer[0][start + 4].fg, "default")
+                self.assertEqual(self.screen.buffer[0][row.index("@bea")].fg, "default")
+
+    def test_mentions_require_whole_nickname_and_respect_no_color(self):
+        text = "@anabel @ana-extra @ana.foo correo@ana @ana @ANA"
+        spans = self.terminal.message_spans(text)
+        self.assertEqual([part for style, part in spans if style], ["@ana", "@ANA"])
+        self.assertEqual("".join(part for _, part in spans), text)
+        rows, _ = layout(spans, 80, color=False)
+        self.assertEqual(rows, [text])
+
     def test_manual_styles_and_plain_text_mode(self):
         self.terminal.output([
             Entry("COMANDOS", kind="heading"),

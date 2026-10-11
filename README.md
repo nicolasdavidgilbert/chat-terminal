@@ -146,7 +146,11 @@ subrayado. Tab también completa `man` y el nombre `chat`.
 
 Una coincidencia de Tab completa la palabra y añade un espacio. Con varias,
 amplía el prefijo común; al pulsar Tab otra vez muestra opciones por columnas.
-Las menciones `@apodo` son texto normal, sin notificaciones especiales.
+Las menciones completas de tu propio `@apodo` aparecen en cian suave
+(`#7FAFAF`), sin negrita ni fondo, tanto en mensajes públicos como privados.
+La comparación ignora mayúsculas y minúsculas; los apodos de otras personas
+no se resaltan. No generan sonidos ni notificaciones. `--no-color` desactiva
+también este resaltado.
 
 El pegado protegido del terminal convierte los saltos de línea y tabulaciones
 en espacios y espera a que pulses Enter. Un cliente Telnet que no envíe las marcas
